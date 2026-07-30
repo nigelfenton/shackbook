@@ -237,7 +237,11 @@ jobs:
 
   # ── macOS (Apple Silicon) ───────────────────────────────────────────────
   build-macos:
-    runs-on: macos-latest
+    # Pinned, not -latest: the newer runner image's SDK dropped the legacy
+    # AGL framework that Qt 6.8's link interface still references, killing
+    # the link with "ld: framework 'AGL' not found" (first hit: v0.4.0).
+    # Revisit when QT_VERSION moves to a release that no longer wants AGL.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v5
 
