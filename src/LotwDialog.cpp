@@ -64,7 +64,9 @@ QString tqslStatusText(int code)
 LotwDialog::LotwDialog(LogbookModel* model, QWidget* parent)
     : QDialog(parent), m_model(model), m_nam(new QNetworkAccessManager(this))
 {
-    setWindowTitle(tr("LoTW — Sign, Upload && Confirmations"));
+    // Window titles are plain text — no mnemonic processing, so a && here
+    // renders literally (unlike the group-box/button labels below).
+    setWindowTitle(tr("LoTW — Sign, Upload & Confirmations"));
     resize(560, 620);
 
     auto* top = new QVBoxLayout(this);
