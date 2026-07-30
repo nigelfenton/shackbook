@@ -11,6 +11,7 @@
 #include "PotaClient.h"
 #include "CallsignLookup.h"
 #include "SectionMapDialog.h"
+#include "GridMapDialog.h"
 #include "LotwDialog.h"
 #include "AprsActivityDialog.h"
 #include "AetherSettingsReader.h"
@@ -353,6 +354,8 @@ void MainWindow::buildMenus()
     auto* mapsMenu = menuBar()->addMenu("&Maps");
     m_actSectionMap = mapsMenu->addAction("&Section Map (ARRL/RAC)…",
                                           this, &MainWindow::onShowSectionMap);
+    mapsMenu->addAction("&Grid Map (Maidenhead)…",
+                        this, &MainWindow::onShowGridMap);
     m_actHowFarMap  = mapsMenu->addAction("&How far? (PSK Reporter)…",
                                           this, &MainWindow::onHowFar);
 
@@ -372,6 +375,20 @@ void MainWindow::onShowSectionMap()
     m_sectionMap->show();
     m_sectionMap->raise();
     m_sectionMap->activateWindow();
+}
+
+void MainWindow::onShowGridMap()
+{
+    if (!m_model) return;
+    if (!m_gridMap) {
+        m_gridMap = new GridMapDialog(m_model, this);
+        m_gridMap->setAttribute(Qt::WA_DeleteOnClose);
+        connect(m_gridMap, &QObject::destroyed, this,
+                [this]() { m_gridMap = nullptr; });
+    }
+    m_gridMap->show();
+    m_gridMap->raise();
+    m_gridMap->activateWindow();
 }
 
 void MainWindow::onShowAprsActivity()

@@ -45,6 +45,8 @@ set(SHACKLOG_SOURCES
     src/SectionMapDialog.h
     src/LotwDialog.cpp
     src/LotwDialog.h
+    src/GridMapDialog.cpp
+    src/GridMapDialog.h
     src/server/WsjtxAdifReceiver.cpp
     src/server/WsjtxAdifReceiver.h
     src/Qso.h

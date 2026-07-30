@@ -6,6 +6,19 @@ All notable changes to ShackLog are recorded here. The format follows
 `vX.Y.Z` tag; CI then builds the Windows installer + zip, Linux AppImage, and
 macOS DMG and attaches them to the GitHub release.
 
+## [Unreleased]
+
+### Added
+- **Grid Map** (Maps → Grid Map) — a Maidenhead grid tracker: equirectangular
+  world with the AA–RR field lattice, every 4-character square worked painted
+  at its true location (dim green worked, bright green confirmed — LoTW or
+  QSL card, the same rule the Awards panel uses), band/mode filters, hover
+  details, live repaint as QSOs are logged. The continent backdrop is
+  deliberately coarse hand-laid geometry in the Section Map spirit.
+
+### Fixed
+- LoTW dialog window title rendered a literal `&&`.
+
 ## [0.4.0] - 2026-07-30
 
 ### Added
