@@ -42,15 +42,22 @@ public:
 
     void setCells(const QHash<QString, GridCellStat>& cells);
 
+signals:
+    // A WORKED square was clicked (select), or the selection was cleared
+    // (empty string) by clicking it again / clicking anywhere else.
+    void squareClicked(const QString& square);
+
 protected:
     void paintEvent(QPaintEvent* ev) override;
     void mouseMoveEvent(QMouseEvent* ev) override;
+    void mousePressEvent(QMouseEvent* ev) override;
 
 private:
     QRectF cellRect(const QString& square) const;   // 4-char square → widget rect
     QString squareAt(const QPoint& pos) const;      // widget point → 4-char square
 
     QHash<QString, GridCellStat> m_cells;
+    QString m_selected;
 };
 
 class GridMapDialog : public QDialog {
@@ -58,6 +65,10 @@ class GridMapDialog : public QDialog {
 
 public:
     explicit GridMapDialog(LogbookModel* model, QWidget* parent = nullptr);
+
+signals:
+    // Forwarded square selection for the main window's filter row.
+    void filterRequested(const QString& square);
 
 public slots:
     void refresh();

@@ -385,6 +385,13 @@ void MainWindow::onShowGridMap()
         m_gridMap->setAttribute(Qt::WA_DeleteOnClose);
         connect(m_gridMap, &QObject::destroyed, this,
                 [this]() { m_gridMap = nullptr; });
+        // Click-to-filter: the square lands in the ordinary filter box —
+        // visible, editable, and cleared the same way as any hand-typed
+        // filter (the text search already covers gridsquare).
+        connect(m_gridMap, &GridMapDialog::filterRequested,
+                this, [this](const QString& square) {
+                    if (m_filterText) m_filterText->setText(square);
+                });
     }
     m_gridMap->show();
     m_gridMap->raise();

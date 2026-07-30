@@ -15,6 +15,8 @@ macOS DMG and attaches them to the GitHub release.
   QSL card, the same rule the Awards panel uses), band/mode filters, hover
   details, live repaint as QSOs are logged. The continent backdrop is
   deliberately coarse hand-laid geometry in the Section Map spirit.
+  Clicking a worked square filters the main log to it (via the ordinary
+  filter box, so clearing works the usual way); clicking again clears.
 
 ### Fixed
 - LoTW dialog window title rendered a literal `&&`.

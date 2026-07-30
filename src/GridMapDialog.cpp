@@ -174,6 +174,14 @@ void GridMapWidget::paintEvent(QPaintEvent*)
         p.fillRect(r, fill);
     }
 
+    // Selection halo under the lattice so the border reads crisply.
+    if (!m_selected.isEmpty() && m_cells.contains(m_selected)) {
+        const QRectF r = cellRect(m_selected);
+        p.setPen(QPen(QColor(0xff, 0xd1, 0x4d), 2.0));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(r.adjusted(-1, -1, 1, 1));
+    }
+
     // Field lattice + labels on top.
     p.setPen(QPen(kFieldLine, 1.0));
     for (int i = 0; i <= 18; ++i) {
@@ -194,6 +202,21 @@ void GridMapWidget::paintEvent(QPaintEvent*)
                            20.0 * lonW, 10.0 * latH);
             p.drawText(r, Qt::AlignCenter, name);
         }
+}
+
+void GridMapWidget::mousePressEvent(QMouseEvent* ev)
+{
+    if (ev->button() != Qt::LeftButton) return;
+    const QString sq = squareAt(ev->pos());
+    // Only worked squares select — filtering the log to an empty square
+    // would just blank the table. Clicking the selection (or anywhere
+    // else) clears it.
+    const QString next =
+        (m_cells.contains(sq) && sq != m_selected) ? sq : QString();
+    if (next == m_selected) return;
+    m_selected = next;
+    update();
+    emit squareClicked(m_selected);
 }
 
 void GridMapWidget::mouseMoveEvent(QMouseEvent* ev)
@@ -247,8 +270,9 @@ GridMapDialog::GridMapDialog(LogbookModel* model, QWidget* parent)
 
     auto* foot = new QLabel(QStringLiteral(
         "Dim green = worked · bright green = confirmed (LoTW or QSL card, "
-        "as the Awards panel counts it) · hover a square for details. "
-        "Filters re-count live; new QSOs appear as they are logged."));
+        "as the Awards panel counts it) · hover a square for details · "
+        "click a worked square to filter the main log to it (click again "
+        "to clear). Filters re-count live; new QSOs appear as logged."));
     foot->setStyleSheet("QLabel { color: #6b8099; font-size: 11px; }");
     foot->setWordWrap(true);
     main->addWidget(foot);
@@ -258,6 +282,9 @@ GridMapDialog::GridMapDialog(LogbookModel* model, QWidget* parent)
             this, &GridMapDialog::refresh);
     connect(m_modeFilter, &QComboBox::currentTextChanged,
             this, &GridMapDialog::refresh);
+
+    connect(m_map, &GridMapWidget::squareClicked,
+            this, &GridMapDialog::filterRequested);
 
     connect(m_model, &LogbookModel::qsoAdded,   this, &GridMapDialog::refresh);
     connect(m_model, &LogbookModel::qsoUpdated, this, &GridMapDialog::refresh);
