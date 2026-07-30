@@ -11,6 +11,7 @@
 #include "PotaClient.h"
 #include "CallsignLookup.h"
 #include "SectionMapDialog.h"
+#include "LotwDialog.h"
 #include "AprsActivityDialog.h"
 #include "AetherSettingsReader.h"
 
@@ -340,6 +341,7 @@ void MainWindow::buildMenus()
     auto* toolsMenu = menuBar()->addMenu("&Tools");
     m_actSettings      = toolsMenu->addAction("&Settings…", this, &MainWindow::onSettings);
     m_actAwards        = toolsMenu->addAction("&Awards…", this, &MainWindow::onShowAwards);
+    m_actLotw          = toolsMenu->addAction("&LoTW Upload…", this, &MainWindow::onShowLotw);
     toolsMenu->addSeparator();
     m_actConnectTci    = toolsMenu->addAction("&Connect TCI",    this, &MainWindow::onConnectTci);
     m_actDisconnectTci = toolsMenu->addAction("&Disconnect TCI", this, &MainWindow::onDisconnectTci);
@@ -1115,6 +1117,16 @@ void MainWindow::onShowAwards()
     AwardsDialog dlg(m_model, m_operatorCall.isEmpty()
                                   ? m_model->myCall() : m_operatorCall, this);
     dlg.exec();
+}
+
+void MainWindow::onShowLotw()
+{
+    if (!m_model || !m_model->isOpen()) return;
+    LotwDialog dlg(m_model, this);
+    dlg.exec();
+    // Uploads mark lotw_sent in bulk and confirmations set lotw_rcvd row by
+    // row — one repaint at close covers both.
+    refreshTable();
 }
 
 void MainWindow::onImportAdif()

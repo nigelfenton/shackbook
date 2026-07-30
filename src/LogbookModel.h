@@ -38,6 +38,7 @@ struct LogbookFilter {
     QString contestId;               // "<NONE>" filters to non-contest QSOs only
     QString dateFrom;                // ADIF YYYYMMDD inclusive
     QString dateTo;
+    bool    lotwUnsentOnly{false};   // only QSOs never uploaded to LoTW
     int     limit{0};
 };
 
@@ -116,6 +117,18 @@ public:
     };
     AdifImportResult importAdif(const QString& filePath,
                                 const QString& actor = QStringLiteral("adif-import"));
+
+    // ── LoTW ──────────────────────────────────────────────────────────
+    // Mark a set of QSOs as uploaded (lotw_sent='Y', lotw_sdate=adifDate),
+    // one transaction, audited as "lotw-upload". Returns rows changed, -1
+    // on failure. Emits qsoUpdated(-1) once (bulk) when anything changed.
+    int markLotwSent(const QVector<qint64>& ids, const QString& adifDate);
+    // Apply one confirmation from a LoTW report: match call+band+date and
+    // time-to-the-minute, set lotw_rcvd='Y'/lotw_rdate. Returns rows
+    // changed (0 = no match), -1 on failure. Audited as "lotw-confirm".
+    int applyLotwConfirmation(const QString& call, const QString& band,
+                              const QString& qsoDate, const QString& timeOn,
+                              const QString& qslDate);
 
     // ── Export ────────────────────────────────────────────────────────
     int exportAdif(const QString& filePath, const LogbookFilter& filter = {}) const;

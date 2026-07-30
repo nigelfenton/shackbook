@@ -22,7 +22,7 @@ namespace ShackLog {
 
 namespace {
 
-constexpr int kCurrentSchemaVersion = 2;
+constexpr int kCurrentSchemaVersion = 3;
 const QString kAdifProgramId = "ShackLog";
 
 // Compact JSON snapshot of a QSO for the audit table.  Field names follow
@@ -296,6 +296,25 @@ bool LogbookModel::migrateSchema()
         v = 2;
     }
 
+    // v2 -> v3: LoTW upload/confirmation dates (ADIF LOTW_QSLSDATE /
+    // LOTW_QSLRDATE). Introduced 2026-07-30 with the Tools -> LoTW dialog:
+    // lotw_sent='Y' alone can't say WHEN a QSO went up, and the
+    // confirmation fetch needs somewhere to store LoTW's QSL date.
+    if (v < 3) {
+        QSqlQuery q{m_db};
+        if (!q.exec("ALTER TABLE qsos ADD COLUMN lotw_sdate TEXT")) {
+            m_lastError = q.lastError().text(); return false;
+        }
+        if (!q.exec("ALTER TABLE qsos ADD COLUMN lotw_rdate TEXT")) {
+            m_lastError = q.lastError().text(); return false;
+        }
+        if (!setSchemaVersion(3)) {
+            m_lastError = "could not set user_version to 3";
+            return false;
+        }
+        v = 3;
+    }
+
     if (v != kCurrentSchemaVersion) {
         m_lastError = QString("schema version %1 not understood (current=%2)")
                           .arg(v).arg(kCurrentSchemaVersion);
@@ -346,7 +365,7 @@ bool LogbookModel::insertQso(Qso& qso, const QString& actor)
         " contest_id, srx, stx, srx_string, stx_string,"
         " station,"
         " comment, notes,"
-        " qsl_sent, qsl_rcvd, lotw_sent, lotw_rcvd, eqsl_sent, eqsl_rcvd,"
+        " qsl_sent, qsl_rcvd, lotw_sent, lotw_rcvd, lotw_sdate, lotw_rdate, eqsl_sent, eqsl_rcvd,"
         " created_at, updated_at"
         ") VALUES ("
         " :call, :qso_date, :time_on, :time_off, :band, :freq, :mode, :submode, :rst_sent, :rst_rcvd,"
@@ -355,7 +374,7 @@ bool LogbookModel::insertQso(Qso& qso, const QString& actor)
         " :contest_id, :srx, :stx, :srx_string, :stx_string,"
         " :station,"
         " :comment, :notes,"
-        " :qsl_sent, :qsl_rcvd, :lotw_sent, :lotw_rcvd, :eqsl_sent, :eqsl_rcvd,"
+        " :qsl_sent, :qsl_rcvd, :lotw_sent, :lotw_rcvd, :lotw_sdate, :lotw_rdate, :eqsl_sent, :eqsl_rcvd,"
         " :created_at, :updated_at"
         ")"
     );
@@ -396,6 +415,8 @@ bool LogbookModel::insertQso(Qso& qso, const QString& actor)
     q.bindValue(":qsl_rcvd", qso.qslRcvd);
     q.bindValue(":lotw_sent", qso.lotwSent);
     q.bindValue(":lotw_rcvd", qso.lotwRcvd);
+    q.bindValue(":lotw_sdate", qso.lotwSdate);
+    q.bindValue(":lotw_rdate", qso.lotwRdate);
     q.bindValue(":eqsl_sent", qso.eqslSent);
     q.bindValue(":eqsl_rcvd", qso.eqslRcvd);
     q.bindValue(":created_at", qso.createdAt);
@@ -441,6 +462,7 @@ bool LogbookModel::updateQso(const Qso& qsoIn, const QString& actor)
         " comment=:comment, notes=:notes,"
         " qsl_sent=:qsl_sent, qsl_rcvd=:qsl_rcvd,"
         " lotw_sent=:lotw_sent, lotw_rcvd=:lotw_rcvd,"
+        " lotw_sdate=:lotw_sdate, lotw_rdate=:lotw_rdate,"
         " eqsl_sent=:eqsl_sent, eqsl_rcvd=:eqsl_rcvd,"
         " updated_at=:updated_at"
         " WHERE id=:id"
@@ -483,6 +505,8 @@ bool LogbookModel::updateQso(const Qso& qsoIn, const QString& actor)
     q.bindValue(":qsl_rcvd", qso.qslRcvd);
     q.bindValue(":lotw_sent", qso.lotwSent);
     q.bindValue(":lotw_rcvd", qso.lotwRcvd);
+    q.bindValue(":lotw_sdate", qso.lotwSdate);
+    q.bindValue(":lotw_rdate", qso.lotwRdate);
     q.bindValue(":eqsl_sent", qso.eqslSent);
     q.bindValue(":eqsl_rcvd", qso.eqslRcvd);
     q.bindValue(":updated_at", qso.updatedAt);
@@ -579,6 +603,10 @@ QString LogbookModel::filterToSql(const LogbookFilter& filter, QVariantList* bin
     }
     if (!filter.dateFrom.isEmpty()) { where << "qso_date >= ?"; binds->append(filter.dateFrom); }
     if (!filter.dateTo.isEmpty())   { where << "qso_date <= ?"; binds->append(filter.dateTo);   }
+    if (filter.lotwUnsentOnly) {
+        // NULL, empty, and 'N' all mean "never went up"; only 'Y' is sent.
+        where << "(lotw_sent IS NULL OR UPPER(lotw_sent) != 'Y')";
+    }
     return " WHERE " + where.join(" AND ");
 }
 
@@ -684,6 +712,8 @@ Qso LogbookModel::qsoFromRow(QSqlQuery& q)
     o.qslRcvd      = s("qsl_rcvd");
     o.lotwSent     = s("lotw_sent");
     o.lotwRcvd     = s("lotw_rcvd");
+    o.lotwSdate    = s("lotw_sdate");
+    o.lotwRdate    = s("lotw_rdate");
     o.eqslSent     = s("eqsl_sent");
     o.eqslRcvd     = s("eqsl_rcvd");
     o.createdAt    = s("created_at");
@@ -917,6 +947,8 @@ int LogbookModel::exportAdif(const QString& filePath, const LogbookFilter& filte
         out << adifField("QSL_RCVD",   q.qslRcvd);
         out << adifField("LOTW_QSL_SENT", q.lotwSent);
         out << adifField("LOTW_QSL_RCVD", q.lotwRcvd);
+        out << adifField("LOTW_QSLSDATE", q.lotwSdate);
+        out << adifField("LOTW_QSLRDATE", q.lotwRdate);
         out << adifField("EQSL_QSL_SENT", q.eqslSent);
         out << adifField("EQSL_QSL_RCVD", q.eqslRcvd);
         out << "<EOR>\n";
@@ -1057,6 +1089,67 @@ void LogbookModel::adifModeFromTciMode(const QString& tciMode,
     // actual digital mode lives in the soundcard program, not in TCI).
     if (adifMode)    *adifMode = mode;
     if (adifSubmode) *adifSubmode = sub;
+}
+
+// ───────────────────────── LoTW bulk operations ─────────────────────────
+
+int LogbookModel::markLotwSent(const QVector<qint64>& ids, const QString& adifDate)
+{
+    if (!m_db.isOpen() || ids.isEmpty()) return 0;
+    if (!m_db.transaction()) { m_lastError = m_db.lastError().text(); return -1; }
+    QSqlQuery q{m_db};
+    q.prepare("UPDATE qsos SET lotw_sent='Y', lotw_sdate=:d,"
+              " updated_at=datetime('now') WHERE id=:id");
+    int n = 0;
+    for (qint64 id : ids) {
+        q.bindValue(":d", adifDate);
+        q.bindValue(":id", id);
+        if (q.exec() && q.numRowsAffected() > 0) {
+            ++n;
+            writeAudit(m_db, "update", id, QStringLiteral("lotw-upload"),
+                       QString(), QStringLiteral("{\"lotw_sent\":\"Y\",\"lotw_sdate\":\"%1\"}")
+                                      .arg(adifDate));
+        }
+    }
+    if (!m_db.commit()) { m_lastError = m_db.lastError().text(); m_db.rollback(); return -1; }
+    if (n > 0) emit qsoUpdated(-1);   // -1 = bulk change, refresh everything
+    return n;
+}
+
+int LogbookModel::applyLotwConfirmation(const QString& call, const QString& band,
+                                        const QString& qsoDate, const QString& timeOn,
+                                        const QString& qslDate)
+{
+    if (!m_db.isOpen()) return 0;
+    // Match tolerantly to the minute, like the import dupe-check: LoTW echoes
+    // back the QSO as WE submitted it, but TIME_ON may be HHMM vs HHMMSS.
+    QSqlQuery sel{m_db};
+    sel.prepare("SELECT id FROM qsos"
+                " WHERE UPPER(call)=UPPER(:call) AND LOWER(band)=LOWER(:band)"
+                "   AND qso_date=:qd AND substr(time_on,1,4)=substr(:t,1,4)"
+                "   AND deleted_at IS NULL"
+                "   AND (lotw_rcvd IS NULL OR UPPER(lotw_rcvd) != 'Y')");
+    sel.bindValue(":call", call);
+    sel.bindValue(":band", band);
+    sel.bindValue(":qd", qsoDate);
+    sel.bindValue(":t", timeOn);
+    if (!sel.exec()) { m_lastError = sel.lastError().text(); return -1; }
+    int n = 0;
+    QSqlQuery upd{m_db};
+    upd.prepare("UPDATE qsos SET lotw_rcvd='Y', lotw_rdate=:rd,"
+                " updated_at=datetime('now') WHERE id=:id");
+    while (sel.next()) {
+        const qint64 id = sel.value(0).toLongLong();
+        upd.bindValue(":rd", qslDate);
+        upd.bindValue(":id", id);
+        if (upd.exec() && upd.numRowsAffected() > 0) {
+            ++n;
+            writeAudit(m_db, "update", id, QStringLiteral("lotw-confirm"),
+                       QString(), QStringLiteral("{\"lotw_rcvd\":\"Y\",\"lotw_rdate\":\"%1\"}")
+                                      .arg(qslDate));
+        }
+    }
+    return n;
 }
 
 } // namespace ShackLog

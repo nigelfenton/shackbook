@@ -70,6 +70,8 @@ struct Qso {
     QString qslRcvd;
     QString lotwSent;
     QString lotwRcvd;
+    QString lotwSdate;                   // ADIF LOTW_QSLSDATE (uploaded on)
+    QString lotwRdate;                   // ADIF LOTW_QSLRDATE (confirmed on)
     QString eqslSent;
     QString eqslRcvd;
 

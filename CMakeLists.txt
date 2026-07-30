@@ -43,6 +43,8 @@ set(SHACKLOG_SOURCES
     src/AwardsDialog.h
     src/SectionMapDialog.cpp
     src/SectionMapDialog.h
+    src/LotwDialog.cpp
+    src/LotwDialog.h
     src/server/WsjtxAdifReceiver.cpp
     src/server/WsjtxAdifReceiver.h
     src/Qso.h

@@ -83,6 +83,8 @@ Qso qsoFromFields(const QHash<QString, QString>& f)
     q.qslRcvd      = f.value(QStringLiteral("qsl_rcvd"));
     q.lotwSent     = f.value(QStringLiteral("lotw_qsl_sent"));
     q.lotwRcvd     = f.value(QStringLiteral("lotw_qsl_rcvd"));
+    q.lotwSdate    = f.value(QStringLiteral("lotw_qslsdate"));
+    q.lotwRdate    = f.value(QStringLiteral("lotw_qslrdate"));
     q.eqslSent     = f.value(QStringLiteral("eqsl_qsl_sent"));
     q.eqslRcvd     = f.value(QStringLiteral("eqsl_qsl_rcvd"));
 
