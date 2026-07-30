@@ -1022,12 +1022,23 @@ bool MainWindow::chooseAndOpenLog(bool startup)
     calls.removeAll(last);
     if (!last.isEmpty()) calls.prepend(last);    // last-used = default choice
 
-    bool ok = false;
-    QString call = QInputDialog::getItem(
-        this, "ShackLog — Operator",
-        "Operator callsign (pick an existing log, or type a\n"
-        "new callsign to start a fresh one):",
-        calls, 0, /*editable*/ true, &ok).trimmed().toUpper();
+    // At startup the main window isn't on screen yet, so a dialog parented
+    // to it has no visible parent and Windows opens it BEHIND whatever has
+    // focus. That has hidden the launch three times now — most recently
+    // leaving the user driving a stale installed copy without noticing.
+    // Stay-on-top plus an explicit raise makes it impossible to miss.
+    QInputDialog dlg(this);
+    dlg.setWindowTitle("ShackLog — Operator");
+    dlg.setLabelText("Operator callsign (pick an existing log, or type a\n"
+                     "new callsign to start a fresh one):");
+    dlg.setComboBoxItems(calls);
+    dlg.setComboBoxEditable(true);
+    dlg.setWindowFlag(Qt::WindowStaysOnTopHint, true);
+    dlg.show();
+    dlg.raise();
+    dlg.activateWindow();
+    const bool ok = dlg.exec() == QDialog::Accepted;
+    QString call = ok ? dlg.textValue().trimmed().toUpper() : QString();
 
     if (!ok || call.isEmpty()) {
         if (!startup) return false;              // live switch cancelled: keep current
