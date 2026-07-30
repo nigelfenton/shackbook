@@ -6,9 +6,26 @@ All notable changes to ShackLog are recorded here. The format follows
 `vX.Y.Z` tag; CI then builds the Windows installer + zip, Linux AppImage, and
 macOS DMG and attaches them to the GitHub release.
 
-## [Unreleased]
+## [0.4.0] - 2026-07-30
 
 ### Added
+- **LoTW sign & upload + confirmations** (Tools → LoTW Upload) — exports the
+  QSOs that have never been uploaded (or a chosen date range) and hands them
+  to ARRL TrustedQSL (`tqsl`) for signing and upload; on success they are
+  marked `LOTW_QSL_SENT=Y` with the upload date. tqsl is auto-detected and
+  the certificate never leaves it. A second panel fetches your LoTW
+  confirmations (website login, not the certificate passphrase) and applies
+  them to the log as `LOTW_QSL_RCVD=Y`, which the Awards panel counts as
+  confirmed. Brand-new LoTW users get a guided setup banner instead of an
+  error when tqsl isn't installed yet.
+  Schema v3 adds `LOTW_QSLSDATE`/`LOTW_QSLRDATE` (both round-trip through
+  ADIF export/import). Older ShackLog builds cannot open a migrated log —
+  update every machine that shares one.
+
+### Fixed
+- The startup operator chooser could open hidden behind other windows,
+  making launches look broken (and once left an old installed copy driving
+  the session unnoticed). It now stays on top and takes focus.
 - **APRS Activity window** (Tools → APRS Activity) — connects to AetherSDR's
   KISS-over-TCP TNC (default `127.0.0.1:8001`), decodes the off-air AX.25/APRS
   traffic, and shows a live roster of heard stations with great-circle

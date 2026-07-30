@@ -6,10 +6,6 @@ items live in the [CHANGELOG](CHANGELOG.md).
 
 ## Near term
 
-- **LoTW upload helper** — sign and upload logged QSOs to ARRL Logbook of the
-  World via `tqsl`: select a date range / station, invoke tqsl to sign the
-  ADIF, upload, and mark the QSOs as uploaded. The single biggest missing piece
-  for confirmation tracking, especially for digital operating.
 - **Visual stats dashboard** — the awards data is computed today but only shown
   as a text report. A visual panel (worked/confirmed by band + mode + DXCC,
   a simple chart) would make it far more useful at a glance.
