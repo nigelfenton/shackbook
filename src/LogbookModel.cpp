@@ -133,24 +133,218 @@ bool LogbookModel::open(const QString& path)
         return false;
     }
 
-    QSqlQuery prag{m_db};
-    prag.exec("PRAGMA foreign_keys = ON");
-    prag.exec("PRAGMA journal_mode = WAL");
-    prag.exec("PRAGMA synchronous = NORMAL");
+    // Scoped: several of these PRAGMAs return a row, so the query stays
+    // ACTIVE while it is in scope — and VACUUM INTO (the backup path,
+    // reached from migrateSchema() and maybeWeeklyBackup() below) fails
+    // outright while any statement on the connection is live. Letting this
+    // object live to the end of open() silently disabled every automatic
+    // backup; the failure text is "cannot VACUUM - SQL statements in
+    // progress".
+    {
+        QSqlQuery prag{m_db};
+        prag.exec("PRAGMA foreign_keys = ON");
+        prag.exec("PRAGMA journal_mode = WAL");
+        prag.exec("PRAGMA synchronous = NORMAL");
+        prag.exec("PRAGMA busy_timeout = 5000");
+        prag.finish();
+    }
+
+    m_openNotice.clear();
+
+    // The log is the one file in the shack that cannot be re-made. Check it
+    // BEFORE trusting it: a cheap page scan every open, the full check only
+    // when the cheap one complains. On confirmed corruption, quarantine the
+    // damaged files and restore the newest verified backup — the operator
+    // loses at most a week, not the logbook.
+    if (!quickCheckOk()) {
+        QSqlQuery full{m_db};
+        const bool fullOk = full.exec("PRAGMA integrity_check") && full.next()
+                            && full.value(0).toString() == QStringLiteral("ok");
+        if (!fullOk) {
+            if (!quarantineAndRestore(dbPath)) {
+                // No verified backup to fall back on. Keep operating on the
+                // damaged file rather than block logging — but say so loudly,
+                // and never silently: refusing to log during a contest is a
+                // worse failure than a flaky page.
+                m_openNotice = QString(
+                    "This logbook FAILED its integrity check and no verified "
+                    "backup exists to restore. Continuing with the damaged "
+                    "file — export an ADIF copy now, and consider recovery "
+                    "before logging further. (%1)").arg(dbPath);
+            }
+        }
+    }
 
     if (!migrateSchema()) {
         m_lastError = QString("migrate: %1").arg(m_lastError);
         m_db.close();
         return false;
     }
+
+    maybeWeeklyBackup();
     return true;
+}
+
+bool LogbookModel::quickCheckOk()
+{
+    QSqlQuery q{m_db};
+    return q.exec("PRAGMA quick_check") && q.next()
+           && q.value(0).toString() == QStringLiteral("ok");
+}
+
+// VACUUM INTO writes a compacted, self-contained copy through the live
+// connection — unlike a file copy it is safe while WAL has uncheckpointed
+// frames. The path is embedded (sqlite string literal, quotes doubled)
+// because VACUUM does not reliably take bound parameters through every Qt
+// SQL driver version.
+QString LogbookModel::writeVerifiedBackup(const QString& tag, int keep)
+{
+    if (!m_db.isOpen()) return {};
+    const QFileInfo dbInfo(m_db.databaseName());
+    const QString dir = dbInfo.absolutePath() + QStringLiteral("/backups");
+    QDir{}.mkpath(dir);
+    const QString stamp =
+        QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    const QString dest = QString("%1/%2-%3-%4.sqlite")
+                             .arg(dir, dbInfo.completeBaseName(), stamp, tag);
+
+    QFile::remove(dest);   // stale partial from an interrupted attempt
+    QSqlQuery q{m_db};
+    QString sql = QStringLiteral("VACUUM INTO '%1'")
+                      .arg(QString(dest).replace(QLatin1Char('\''),
+                                                 QStringLiteral("''")));
+    if (!q.exec(sql)) {
+        m_lastError = QString("backup: %1").arg(q.lastError().text());
+        QFile::remove(dest);
+        return {};
+    }
+    if (!verifyBackupFile(dest)) {
+        m_lastError = QStringLiteral("backup: snapshot failed verification");
+        QFile::remove(dest);
+        return {};
+    }
+
+    // Prune: keep the newest `keep` snapshots carrying this tag (the stamp
+    // sorts lexically, so name order IS age order).
+    QDir d(dir);
+    QStringList old = d.entryList(
+        {QString("%1-*-%2.sqlite").arg(dbInfo.completeBaseName(), tag)},
+        QDir::Files, QDir::Name);
+    while (old.size() > keep) {
+        QFile::remove(dir + QLatin1Char('/') + old.takeFirst());
+    }
+    return dest;
+}
+
+bool LogbookModel::verifyBackupFile(const QString& path) const
+{
+    bool ok = false;
+    const QString conn = QStringLiteral("shacklog-verify-%1")
+                             .arg(QDateTime::currentMSecsSinceEpoch());
+    {
+        QSqlDatabase v = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), conn);
+        v.setDatabaseName(path);
+        v.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (v.open()) {
+            QSqlQuery q{v};
+            ok = q.exec("PRAGMA quick_check") && q.next()
+                 && q.value(0).toString() == QStringLiteral("ok")
+                 && q.exec("SELECT count(*) FROM qsos") && q.next();
+            v.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(conn);
+    return ok;
+}
+
+void LogbookModel::maybeWeeklyBackup()
+{
+    QDateTime last;
+    {
+        // Read the stamp in its own scope: settingValue()'s query must be
+        // finished before VACUUM INTO, which fails outright while any
+        // statement on the connection is still prepared.
+        last = QDateTime::fromString(
+            settingValue(QStringLiteral("BACKUP_LAST_AUTO")), Qt::ISODate);
+    }
+    if (last.isValid()
+        && last.daysTo(QDateTime::currentDateTimeUtc()) < 7) {
+        return;
+    }
+    if (!writeVerifiedBackup(QStringLiteral("auto"), 5).isEmpty()) {
+        setSetting(QStringLiteral("BACKUP_LAST_AUTO"),
+                   QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    }
+}
+
+bool LogbookModel::quarantineAndRestore(const QString& dbPath)
+{
+    const QFileInfo dbInfo(dbPath);
+    const QString dir = dbInfo.absolutePath();
+    const QString backupsDir = dir + QStringLiteral("/backups");
+
+    // Newest verified backup for THIS log, before touching anything.
+    QDir bd(backupsDir);
+    const QStringList candidates = bd.entryList(
+        {dbInfo.completeBaseName() + QStringLiteral("-*.sqlite")},
+        QDir::Files, QDir::Name | QDir::Reversed);
+    QString source;
+    for (const QString& name : candidates) {
+        const QString full = backupsDir + QLatin1Char('/') + name;
+        if (verifyBackupFile(full)) { source = full; break; }
+    }
+    if (source.isEmpty()) return false;
+
+    m_db.close();
+    QSqlDatabase::removeDatabase(m_connectionName);
+
+    const QString qdir = dir + QStringLiteral("/quarantine");
+    QDir{}.mkpath(qdir);
+    const QString stamp =
+        QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    for (const QString& sfx :
+         {QString(), QStringLiteral("-wal"), QStringLiteral("-shm")}) {
+        const QString src = dbPath + sfx;
+        if (QFile::exists(src)) {
+            QFile::rename(src, QString("%1/%2-%3.sqlite%4")
+                                   .arg(qdir, dbInfo.completeBaseName(), stamp, sfx));
+        }
+    }
+    QFile::copy(source, dbPath);
+
+    m_db = QSqlDatabase::addDatabase("QSQLITE", m_connectionName);
+    m_db.setDatabaseName(dbPath);
+    if (!m_db.open()) {
+        m_lastError = QString("restore reopen: %1").arg(m_db.lastError().text());
+        return false;
+    }
+    {
+        QSqlQuery prag{m_db};
+        prag.exec("PRAGMA foreign_keys = ON");
+        prag.exec("PRAGMA journal_mode = WAL");
+        prag.exec("PRAGMA synchronous = NORMAL");
+        prag.exec("PRAGMA busy_timeout = 5000");
+        prag.finish();
+    }
+
+    m_openNotice = QString(
+        "This logbook failed its integrity check. The damaged files were "
+        "moved to:\n%1\nand the newest verified backup was restored:\n%2\n"
+        "QSOs logged after that backup may be missing — check recent entries.")
+                       .arg(qdir, QFileInfo(source).fileName());
+    return quickCheckOk();
 }
 
 int LogbookModel::schemaVersion() const
 {
     QSqlQuery q{m_db};
     if (!q.exec("PRAGMA user_version") || !q.next()) return 0;
-    return q.value(0).toInt();
+    const int v = q.value(0).toInt();
+    // Finish before returning: a still-prepared statement on this connection
+    // makes VACUUM INTO fail ("SQL statements in progress"), and the caller
+    // right below this is the pre-migration backup.
+    q.finish();
+    return v;
 }
 
 bool LogbookModel::setSchemaVersion(int v)
@@ -162,6 +356,15 @@ bool LogbookModel::setSchemaVersion(int v)
 bool LogbookModel::migrateSchema()
 {
     int v = schemaVersion();
+
+    // An existing logbook about to be migrated gets a verified snapshot
+    // FIRST — schema bumps are exactly when a bug could eat the file, and
+    // "restore the pre-migration backup" beats "restore from memory of what
+    // the log contained". (A fresh v0 file has nothing to protect.)
+    if (v > 0 && v < kCurrentSchemaVersion) {
+        writeVerifiedBackup(
+            QStringLiteral("premigration-v%1").arg(v), /*keep*/ 3);
+    }
 
     // v0 → v1: initial schema.
     if (v < 1) {
@@ -730,7 +933,12 @@ QString LogbookModel::settingValue(const QString& key, const QString& defaultVal
     q.prepare("SELECT value FROM settings WHERE key = :k");
     q.bindValue(":k", key);
     if (!q.exec() || !q.next()) return defaultValue;
-    return q.value(0).toString();
+    const QString value = q.value(0).toString();
+    // Release the statement before returning. Qt keeps a SELECT prepared
+    // until finish()/destruction, and a live statement anywhere on this
+    // connection makes VACUUM INTO (the backup path) fail outright.
+    q.finish();
+    return value;
 }
 
 bool LogbookModel::setSetting(const QString& key, const QString& value)

@@ -1099,6 +1099,12 @@ bool MainWindow::chooseAndOpenLog(bool startup)
     m_operatorCall = call;
     settings.setValue("lastOperator", call);
     setWindowTitle(QString("ShackLog — %1").arg(call));
+    // Integrity/restore events must reach the operator, not just the log:
+    // a silently-restored logbook is how a week of QSOs goes missing twice.
+    if (!m_model->openNotice().isEmpty()) {
+        QMessageBox::warning(this, "ShackLog — logbook integrity",
+                             m_model->openNotice());
+    }
     return true;
 }
 

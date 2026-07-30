@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(ShackLog
-    VERSION 0.4.0
+    VERSION 0.4.1
     DESCRIPTION "Standalone ham radio logbook with TCI integration"
     LANGUAGES CXX)
 
@@ -196,6 +196,18 @@ endif()
 option(SHACKLOG_TESTS "Build ShackLog unit tests" OFF)
 if(SHACKLOG_TESTS)
     enable_testing()
+
+    add_executable(durability_test
+        tests/durability_test.cpp
+        src/LogbookModel.cpp
+        src/LogbookModel.h
+        src/AdifReader.cpp
+        src/AdifReader.h
+        src/Qso.h
+    )
+    target_include_directories(durability_test PRIVATE src)
+    target_link_libraries(durability_test PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME durability_test COMMAND durability_test)
 
     add_executable(aprs_decode_test
         tests/aprs_decode_test.cpp

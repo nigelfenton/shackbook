@@ -6,9 +6,32 @@ All notable changes to ShackLog are recorded here. The format follows
 `vX.Y.Z` tag; CI then builds the Windows installer + zip, Linux AppImage, and
 macOS DMG and attaches them to the GitHub release.
 
-## [Unreleased]
+## [0.4.1] - 2026-07-30
 
 ### Added
+- **The logbook now protects itself.** A ham's log is the one file in the
+  shack that cannot be remade, so ShackLog now treats it that way:
+  - **Verified backups** — a compacted snapshot (`VACUUM INTO`, safe against a
+    live database, unlike a file copy) written automatically at most weekly and
+    **before every schema migration**, each one verified by reopening it and
+    checking it before it counts. The newest five automatic and three
+    pre-migration snapshots are kept in a `backups/` folder beside the log.
+  - **Integrity check on open** — a fast page check every time, the full check
+    only if that complains.
+  - **Quarantine and restore** — a logbook that fails its integrity check has
+    its damaged files moved aside (never deleted) and the newest verified
+    backup restored in their place, with a dialog telling you exactly what
+    happened and which QSOs might be missing. With no backup available,
+    ShackLog keeps logging on the damaged file rather than locking you out
+    mid-contest — but says so loudly.
+
+### Fixed
+- **Automatic backups could never have run**: several `PRAGMA` statements
+  return a row, so the settings query in `open()` stayed active for the whole
+  function and `VACUUM INTO` refused to run behind it ("SQL statements in
+  progress"). Found by the new durability tests before any release shipped.
+
+### Added (also new since 0.4.0)
 - **Grid Map** (Maps → Grid Map) — a Maidenhead grid tracker: equirectangular
   world with the AA–RR field lattice, every 4-character square worked painted
   at its true location (dim green worked, bright green confirmed — LoTW or

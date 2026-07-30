@@ -58,6 +58,18 @@ public:
     bool isOpen() const { return m_db.isOpen(); }
     QString databasePath() const { return m_db.databaseName(); }
     QString errorString()  const { return m_lastError; }
+    // Human-readable notice from open() when something the operator should
+    // know about happened (integrity failure, backup restored, damaged file
+    // kept in use). Empty when the open was clean.
+    QString openNotice()   const { return m_openNotice; }
+
+    // Write a verified backup snapshot of the open logbook (VACUUM INTO a
+    // fresh single file — safe against a live WAL database — then verify it
+    // opens, passes quick_check, and has a qsos table). Keeps the newest
+    // `keep` backups carrying the same tag. Returns the backup path, or an
+    // empty string on failure. Used automatically (weekly, and before every
+    // schema migration); public so Tools/scripts can snapshot on demand.
+    QString writeVerifiedBackup(const QString& tag, int keep);
 
     // ── CRUD ──────────────────────────────────────────────────────────
     // The `actor` argument (schema v2+) names whoever caused this mutation
@@ -162,6 +174,10 @@ signals:
 private:
     bool migrateSchema();
     int  schemaVersion() const;
+    bool quickCheckOk();
+    bool verifyBackupFile(const QString& path) const;
+    void maybeWeeklyBackup();
+    bool quarantineAndRestore(const QString& dbPath);
     bool setSchemaVersion(int v);
 
     static Qso qsoFromRow(class QSqlQuery& q);
@@ -170,6 +186,7 @@ private:
 
     QSqlDatabase m_db;
     QString      m_lastError;
+    QString      m_openNotice;
     QString      m_connectionName;
 };
 
