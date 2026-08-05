@@ -3,6 +3,7 @@
 // the rest of the user's shack stack, and show the main window.
 
 #include "MainWindow.h"
+#include "Version.h"
 
 #include <QApplication>
 #include <QFile>
@@ -101,7 +102,7 @@ int main(int argc, char* argv[])
     QApplication::setOrganizationName("G0JKN");
     QApplication::setOrganizationDomain("g0jkn.uk");
     QApplication::setApplicationName("ShackLog");
-    QApplication::setApplicationVersion("0.4.1");
+    QApplication::setApplicationVersion(ShackLog::versionString());
 
     QApplication app(argc, argv);
     app.setStyleSheet(kAppStylesheet);

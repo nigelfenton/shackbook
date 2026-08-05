@@ -112,6 +112,9 @@ private:
     void populateContestFilter();
     void refreshDupBadge();
     void refreshStatusBar();
+    // "ShackLog — G0JKN — 0.5.0-dev". Carries the version always, and the
+    // -dev tag on any build that is not an installed release.
+    static QString windowTitleFor(const QString& operatorCall);
     // The radio to stamp on a QSO, resolved as: per-connection nickname →
     // the TCI-announced device name → empty. Empty when not connected, so an
     // offline QSO is left unattributed rather than credited to the last radio.

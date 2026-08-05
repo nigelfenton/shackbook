@@ -3,6 +3,7 @@
 #include "AwardsDialog.h"
 #include "LogbookModel.h"
 #include "TciClient.h"
+#include "Version.h"
 #include "server/WsjtxAdifReceiver.h"
 #include "EditDialog.h"
 #include "SettingsDialog.h"
@@ -157,7 +158,7 @@ MainWindow::MainWindow(QWidget* parent)
       m_pota(new PotaClient(this)),
       m_spotPurgeTimer(new QTimer(this))
 {
-    setWindowTitle("ShackLog");
+    setWindowTitle(windowTitleFor({}));
     resize(1200, 700);
 
     if (!chooseAndOpenLog(/*startup*/ true)) {
@@ -1105,7 +1106,7 @@ bool MainWindow::chooseAndOpenLog(bool startup)
         m_model->setSetting("MY_CALL", call);    // seed a fresh log's identity
     m_operatorCall = call;
     settings.setValue("lastOperator", call);
-    setWindowTitle(QString("ShackLog — %1").arg(call));
+    setWindowTitle(windowTitleFor(call));
     // Integrity/restore events must reach the operator, not just the log:
     // a silently-restored logbook is how a week of QSOs goes missing twice.
     if (!m_model->openNotice().isEmpty()) {
@@ -1685,6 +1686,19 @@ void MainWindow::startCallsignLookup(const QString& callIn)
     // Tier 3 — online (QRZ / HamQTH / callook), only for the gaps tier 1
     // couldn't fill.  Async; the result lambda merges when it lands.
     if (!havePersonal) m_lookup->lookup(call, isUs);
+}
+
+// ── Window title ─────────────────────────────────────────────────────────
+
+QString MainWindow::windowTitleFor(const QString& operatorCall)
+{
+    // Always carry the version, and mark a working build as such. Two copies
+    // of ShackLog look identical on screen — installed vs freshly built — and
+    // testing the wrong one wastes a whole session before anyone notices.
+    QString t = QStringLiteral("ShackLog");
+    if (!operatorCall.isEmpty()) t += QStringLiteral(" — %1").arg(operatorCall);
+    t += QStringLiteral(" — %1").arg(versionString());
+    return t;
 }
 
 // ── Radio identity ───────────────────────────────────────────────────────

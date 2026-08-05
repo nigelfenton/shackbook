@@ -30,3 +30,7 @@ Thumbs.db
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+
+# Opt-in test / release-flagged build dirs
+build-tests/
+build-rel/

@@ -94,6 +94,22 @@ endif()
 
 target_include_directories(ShackLog PRIVATE src)
 
+# Version comes from project() — never hand-typed in a source file. It went
+# stale from 0.1 to 0.3 that way once already.
+#
+# SHACKLOG_BUILD_TAG marks a build that is NOT an installed release, so the
+# window title can say so. An unmarked developer build is indistinguishable
+# from the installed copy on screen, and on 2026-08-05 a feature was tested
+# against a months-old installed binary for exactly that reason. Release CI
+# builds pass -DSHACKLOG_RELEASE=ON and get no tag.
+option(SHACKLOG_RELEASE "Mark this build as an official release (no dev tag in the title)" OFF)
+target_compile_definitions(ShackLog PRIVATE
+    SHACKLOG_VERSION="${PROJECT_VERSION}"
+)
+if(NOT SHACKLOG_RELEASE)
+    target_compile_definitions(ShackLog PRIVATE SHACKLOG_BUILD_TAG="dev")
+endif()
+
 target_link_libraries(ShackLog PRIVATE
     Qt6::Core
     Qt6::Gui
