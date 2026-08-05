@@ -32,6 +32,8 @@ public:
 
 private slots:
     void onAccept();
+    // Scan for TCI servers and fill in the host/port of whichever is chosen.
+    void onScanForRadios();
 
 private:
     void buildUI();
@@ -49,6 +51,7 @@ private:
     // TCI
     QLineEdit*  m_tciHost{};
     QSpinBox*   m_tciPort{};
+    QPushButton* m_tciScan{};
     QLineEdit*  m_tciNickname{};
     QCheckBox*  m_tciAutoConnect{};
 

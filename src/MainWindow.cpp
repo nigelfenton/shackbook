@@ -3,6 +3,7 @@
 #include "AwardsDialog.h"
 #include "LogbookModel.h"
 #include "TciClient.h"
+#include "TciDiscovery.h"
 #include "Version.h"
 #include "server/WsjtxAdifReceiver.h"
 #include "EditDialog.h"
@@ -30,7 +31,9 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileDialog>
+#include <QEventLoop>
 #include <QInputDialog>
+#include <QProgressDialog>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QFrame>
@@ -350,6 +353,7 @@ void MainWindow::buildMenus()
     m_actAwards        = toolsMenu->addAction("&Awards…", this, &MainWindow::onShowAwards);
     m_actLotw          = toolsMenu->addAction("&LoTW Upload…", this, &MainWindow::onShowLotw);
     toolsMenu->addSeparator();
+    m_actFindRadios    = toolsMenu->addAction("&Find radios…",   this, &MainWindow::onFindRadios);
     m_actConnectTci    = toolsMenu->addAction("&Connect TCI",    this, &MainWindow::onConnectTci);
     m_actDisconnectTci = toolsMenu->addAction("&Disconnect TCI", this, &MainWindow::onDisconnectTci);
     toolsMenu->addSeparator();
@@ -1274,6 +1278,76 @@ void MainWindow::applyAutoConnectFromSettings()
     if (!m_model) return;
     const bool autoConnect = m_model->settingValue("TCI_AUTOCONNECT", "1") == "1";
     if (!autoConnect) return;
+    onConnectTci();
+}
+
+void MainWindow::onFindRadios()
+{
+    if (!m_model) return;
+
+    // Sweep loopback plus wherever the operator is already pointed, so a
+    // radio on another machine is found without asking for its address again.
+    QStringList hosts{QStringLiteral("127.0.0.1")};
+    const QString configured = m_model->settingValue("TCI_HOST", "127.0.0.1").trimmed();
+    if (!configured.isEmpty()) hosts << configured;
+
+    QProgressDialog progress(tr("Looking for radios…"), tr("Cancel"), 0, 1, this);
+    progress.setWindowTitle(tr("Find radios"));
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+    progress.setValue(0);
+
+    TciDiscovery discovery;
+    QList<TciServerInfo> found;
+
+    connect(&discovery, &TciDiscovery::progress, &progress,
+            [&progress](int done, int total) {
+                progress.setMaximum(total);
+                progress.setValue(done);
+            });
+
+    QEventLoop loop;
+    connect(&discovery, &TciDiscovery::finished, &loop,
+            [&](const QList<TciServerInfo>& servers) {
+                found = servers;
+                loop.quit();
+            });
+    connect(&progress, &QProgressDialog::canceled, &discovery, &TciDiscovery::cancel);
+
+    discovery.scan(hosts, TciDiscovery::defaultPorts());
+    loop.exec();
+    progress.close();
+
+    if (found.isEmpty()) {
+        QMessageBox::information(
+            this, tr("Find radios"),
+            tr("No TCI servers answered.\n\n"
+               "A radio only appears here if its software is running and TCI is "
+               "switched on — in AetherSDR that is Tools → TCI. Ports tried: "
+               "40001, 40002, 50001, 50002 on this machine%1.")
+                .arg(configured == QStringLiteral("127.0.0.1")
+                         ? QString()
+                         : tr(" and %1").arg(configured)));
+        return;
+    }
+
+    QStringList labels;
+    labels.reserve(found.size());
+    for (const TciServerInfo& s : found) labels << s.label();
+
+    bool ok = false;
+    const QString chosen = QInputDialog::getItem(
+        this, tr("Find radios"),
+        tr("These answered a TCI handshake — pick one to use:"),
+        labels, 0, /*editable*/ false, &ok);
+    if (!ok || chosen.isEmpty()) return;
+
+    const int idx = labels.indexOf(chosen);
+    if (idx < 0) return;
+    const TciServerInfo& pick = found.at(idx);
+
+    m_model->setSetting("TCI_HOST", pick.host);
+    m_model->setSetting("TCI_PORT", QString::number(pick.port));
     onConnectTci();
 }
 

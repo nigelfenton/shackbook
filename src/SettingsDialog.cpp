@@ -3,9 +3,15 @@
 #include "LogbookModel.h"
 #include "AetherSettingsReader.h"
 #include "TciClient.h"      // tciNicknameKey()
+#include "TciDiscovery.h"
 
 #include <QComboBox>
+#include <QEventLoop>
+#include <QInputDialog>
 #include <QLabel>
+#include <QMessageBox>
+#include <QProgressDialog>
+#include <QPushButton>
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
@@ -88,8 +94,15 @@ void SettingsDialog::buildUI()
         "rigs driven by the same software look identical without a nickname.\n\n"
         "Stored per host:port. Leave blank to record the announced name.");
     m_tciAutoConnect = new QCheckBox("Connect to TCI server on launch");
+    m_tciScan = new QPushButton("Find radios…");
+    m_tciScan->setToolTip(
+        "Look for TCI servers on this machine and the host above.\n\n"
+        "Only servers that answer a real TCI handshake are offered — a port "
+        "that merely accepts a connection is not a radio.");
+    connect(m_tciScan, &QPushButton::clicked, this, &SettingsDialog::onScanForRadios);
     tciL->addRow("Host", m_tciHost);
     tciL->addRow("Port", m_tciPort);
+    tciL->addRow(QString(), m_tciScan);
     tciL->addRow("Radio nickname", m_tciNickname);
     tciL->addRow(m_tciAutoConnect);
     tabs->addTab(tci, "TCI");
@@ -341,6 +354,73 @@ void SettingsDialog::populate()
     setCombo(m_cbCatPower,       m_model->settingValue("CABRILLO_CAT_POWER",        "HIGH"));
     setCombo(m_cbCatStation,     m_model->settingValue("CABRILLO_CAT_STATION",      "FIXED"));
     setCombo(m_cbCatTransmitter, m_model->settingValue("CABRILLO_CAT_TRANSMITTER",  "ONE"));
+}
+
+void SettingsDialog::onScanForRadios()
+{
+    // Sweep loopback plus whatever host is TYPED in the box right now — the
+    // operator may be pointing at a new machine and not have saved it yet.
+    QStringList hosts{QStringLiteral("127.0.0.1")};
+    const QString typed = m_tciHost->text().trimmed();
+    if (!typed.isEmpty()) hosts << typed;
+
+    QProgressDialog progress(tr("Looking for radios…"), tr("Cancel"), 0, 1, this);
+    progress.setWindowTitle(tr("Find radios"));
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+    progress.setValue(0);
+
+    TciDiscovery discovery;
+    QList<TciServerInfo> found;
+
+    connect(&discovery, &TciDiscovery::progress, &progress,
+            [&progress](int done, int total) {
+                progress.setMaximum(total);
+                progress.setValue(done);
+            });
+
+    QEventLoop loop;
+    connect(&discovery, &TciDiscovery::finished, &loop,
+            [&](const QList<TciServerInfo>& servers) { found = servers; loop.quit(); });
+    connect(&progress, &QProgressDialog::canceled, &discovery, &TciDiscovery::cancel);
+
+    discovery.scan(hosts, TciDiscovery::defaultPorts());
+    loop.exec();
+    progress.close();
+
+    if (found.isEmpty()) {
+        QMessageBox::information(
+            this, tr("Find radios"),
+            tr("No TCI servers answered.\n\n"
+               "A radio only appears here if its software is running and TCI is "
+               "switched on — in AetherSDR that is Tools → TCI."));
+        return;
+    }
+
+    QStringList labels;
+    labels.reserve(found.size());
+    for (const TciServerInfo& s : found) labels << s.label();
+
+    bool ok = false;
+    const QString chosen = QInputDialog::getItem(
+        this, tr("Find radios"),
+        tr("These answered a TCI handshake — pick one to use:"),
+        labels, 0, false, &ok);
+    if (!ok || chosen.isEmpty()) return;
+
+    const int idx = labels.indexOf(chosen);
+    if (idx < 0) return;
+    const TciServerInfo& pick = found.at(idx);
+
+    // Fill the fields; nothing is saved until the operator accepts the dialog.
+    m_tciHost->setText(pick.host);
+    m_tciPort->setValue(pick.port);
+
+    // Offer the announced name as a starting nickname when none is set — it is
+    // the application name, so it still needs editing when two radios share
+    // one server, but it beats a blank box.
+    if (m_tciNickname->text().trimmed().isEmpty() && !pick.device.isEmpty())
+        m_tciNickname->setText(pick.device);
 }
 
 void SettingsDialog::onAccept()

@@ -49,6 +49,12 @@ public:
     // Permanent disconnect — does not auto-reconnect.
     void disconnectFromServer();
 
+    // One-shot mode for discovery probes: never auto-reconnect, whatever
+    // happens. Without this a probe against a dead port retries on a backoff
+    // forever, and a scan of a dozen ports leaves a dozen retry timers running
+    // behind the app. Set it BEFORE connectToServer().
+    void setProbeMode(bool probe) { m_probeMode = probe; }
+
     bool    connected()             const { return m_connected; }
     double  currentFrequencyMhz()   const { return m_freqMhz; }
     QString currentMode()           const { return m_mode; }
@@ -93,6 +99,7 @@ private:
 
     QUrl    m_url;
     bool    m_userInitiatedDisconnect{false};
+    bool    m_probeMode{false};
     bool    m_connected{false};
     int     m_reconnectAttempts{0};
 

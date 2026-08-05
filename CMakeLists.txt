@@ -35,6 +35,8 @@ set(SHACKLOG_SOURCES
     src/MainWindow.h
     src/TciClient.cpp
     src/TciClient.h
+    src/TciDiscovery.cpp
+    src/TciDiscovery.h
     src/LogbookModel.cpp
     src/LogbookModel.h
     src/AdifReader.cpp
@@ -233,6 +235,17 @@ if(SHACKLOG_TESTS)
     target_include_directories(aprs_decode_test PRIVATE src)
     target_link_libraries(aprs_decode_test PRIVATE Qt6::Core)
     add_test(NAME aprs_decode_test COMMAND aprs_decode_test)
+
+    add_executable(tci_discovery_test
+        tests/tci_discovery_test.cpp
+        src/TciDiscovery.cpp
+        src/TciDiscovery.h
+        src/TciClient.cpp
+        src/TciClient.h
+    )
+    target_include_directories(tci_discovery_test PRIVATE src)
+    target_link_libraries(tci_discovery_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
+    add_test(NAME tci_discovery_test COMMAND tci_discovery_test)
 
     add_executable(radio_attribution_test
         tests/radio_attribution_test.cpp

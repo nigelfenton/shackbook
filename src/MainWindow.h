@@ -78,6 +78,8 @@ private slots:
 
     // TCI
     void onConnectTci();
+    // Scan for TCI servers and offer what answered a real handshake.
+    void onFindRadios();
     void onDisconnectTci();
     void onTciConnectionChanged(bool connected);
     void onTciFrequencyChanged(double mhz);
@@ -216,6 +218,7 @@ private:
     QAction* m_actExportAdif{};
     QAction* m_actExportCab{};
     QAction* m_actSettings{};
+    QAction* m_actFindRadios{};
     QAction* m_actConnectTci{};
     QAction* m_actDisconnectTci{};
     QAction* m_actDxcLog{};

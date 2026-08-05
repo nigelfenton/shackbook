@@ -197,6 +197,7 @@ void TciClient::parseLine(const QString& line)
 void TciClient::scheduleReconnect()
 {
     if (m_userInitiatedDisconnect) return;
+    if (m_probeMode) return;   // discovery probes are one-shot by design
     const int secs = backoffSeconds(m_reconnectAttempts);
     ++m_reconnectAttempts;
     m_reconnectTimer->start(secs * 1000);
