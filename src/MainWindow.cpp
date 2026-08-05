@@ -224,6 +224,11 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::onContextSettingsChanged);
 
     connect(m_tci, &TciClient::connectionChanged, this, &MainWindow::onTciConnectionChanged);
+    // `device:` lands just after the connection comes up, so the status bar
+    // needs a second refresh once the name is known.
+    connect(m_tci, &TciClient::deviceNameChanged, this, [this](const QString&) {
+        refreshStatusBar();
+    });
     connect(m_tci, &TciClient::frequencyChanged,  this, &MainWindow::onTciFrequencyChanged);
     connect(m_tci, &TciClient::modeChanged,       this, &MainWindow::onTciModeChanged);
 
@@ -791,6 +796,7 @@ void MainWindow::onSaveQso()
     q.myGridsquare = m_model->myGridsquare();
     q.myState      = m_model->myState();
     q.txPwr        = m_model->defaultTxPwr();
+    q.station      = currentRadioName();   // blank unless TCI is connected
 
     if (m_model->contestMode()) {
         q.contestId = m_model->contestId();
@@ -986,6 +992,7 @@ void MainWindow::onNewQso()
     q.myGridsquare = m_model->myGridsquare();
     q.myState      = m_model->myState();
     q.txPwr        = m_model->defaultTxPwr();
+    q.station      = currentRadioName();   // blank unless TCI is connected
     EditDialog dlg(m_model, q, this);
     dlg.exec();
 }
@@ -1680,6 +1687,24 @@ void MainWindow::startCallsignLookup(const QString& callIn)
     if (!havePersonal) m_lookup->lookup(call, isUs);
 }
 
+// ── Radio identity ───────────────────────────────────────────────────────
+
+QString MainWindow::currentRadioName() const
+{
+    if (!m_model || !m_tci || !m_tci->connected()) return {};
+
+    // A nickname is stored per host:port, so two radios reached at different
+    // endpoints keep separate names. It wins over `device:` because TCI's
+    // device name is the APPLICATION — AetherSDR answers "AetherSDR" for a
+    // Hermes-Lite 2 and a FLEX-6700 alike, so it cannot tell them apart.
+    const QString host = m_model->settingValue("TCI_HOST", "127.0.0.1");
+    const QString port = m_model->settingValue("TCI_PORT", "40001");
+    const QString nick = m_model->settingValue(tciNicknameKey(host, port), {}).trimmed();
+    if (!nick.isEmpty()) return nick;
+
+    return m_tci->deviceName().trimmed();
+}
+
 // ── Status bar ───────────────────────────────────────────────────────────
 
 void MainWindow::refreshStatusBar()
@@ -1687,9 +1712,16 @@ void MainWindow::refreshStatusBar()
     if (!m_model) return;
     const QString host = m_model->settingValue("TCI_HOST", "127.0.0.1");
     const QString port = m_model->settingValue("TCI_PORT", "40001");
-    m_sbTci->setText(QString("TCI: %1 %2:%3")
-                         .arg(m_tci->connected() ? "✓" : "✗")
-                         .arg(host).arg(port));
+    // Show the radio being logged against, so what lands in the QSO is
+    // visible before it is saved rather than discovered afterwards.
+    const QString radio = currentRadioName();
+    m_sbTci->setText(radio.isEmpty()
+                         ? QString("TCI: %1 %2:%3")
+                               .arg(m_tci->connected() ? "✓" : "✗")
+                               .arg(host).arg(port)
+                         : QString("TCI: %1 %2 @ %3:%4")
+                               .arg(m_tci->connected() ? "✓" : "✗")
+                               .arg(radio).arg(host).arg(port));
 
     if (m_dxc && m_sbDxc) {
         const bool dxcEnabled = m_model->settingValue("DXC_ENABLE", "0") == "1";

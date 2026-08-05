@@ -217,4 +217,16 @@ if(SHACKLOG_TESTS)
     target_include_directories(aprs_decode_test PRIVATE src)
     target_link_libraries(aprs_decode_test PRIVATE Qt6::Core)
     add_test(NAME aprs_decode_test COMMAND aprs_decode_test)
+
+    add_executable(radio_attribution_test
+        tests/radio_attribution_test.cpp
+        src/LogbookModel.cpp
+        src/LogbookModel.h
+        src/AdifReader.cpp
+        src/AdifReader.h
+        src/Qso.h
+    )
+    target_include_directories(radio_attribution_test PRIVATE src)
+    target_link_libraries(radio_attribution_test PRIVATE Qt6::Core Qt6::Sql)
+    add_test(NAME radio_attribution_test COMMAND radio_attribution_test)
 endif()

@@ -112,6 +112,10 @@ private:
     void populateContestFilter();
     void refreshDupBadge();
     void refreshStatusBar();
+    // The radio to stamp on a QSO, resolved as: per-connection nickname →
+    // the TCI-announced device name → empty. Empty when not connected, so an
+    // offline QSO is left unattributed rather than credited to the last radio.
+    QString currentRadioName() const;
     void applyAutoConnectFromSettings();
     void applyClusterConfigFromSettings();
     void applyPotaConfigFromSettings();

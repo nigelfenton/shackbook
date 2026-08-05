@@ -2,6 +2,7 @@
 
 #include "LogbookModel.h"
 #include "AetherSettingsReader.h"
+#include "TciClient.h"      // tciNicknameKey()
 
 #include <QComboBox>
 #include <QLabel>
@@ -79,9 +80,17 @@ void SettingsDialog::buildUI()
     m_tciHost->setPlaceholderText("127.0.0.1");
     m_tciPort = new QSpinBox;
     m_tciPort->setRange(1, 65535);
+    m_tciNickname = new QLineEdit;
+    m_tciNickname->setPlaceholderText("e.g. Hermes-Lite 2");
+    m_tciNickname->setToolTip(
+        "Name recorded on each QSO made through this server.\n\n"
+        "TCI reports the application (\"AetherSDR\"), not the radio, so two "
+        "rigs driven by the same software look identical without a nickname.\n\n"
+        "Stored per host:port. Leave blank to record the announced name.");
     m_tciAutoConnect = new QCheckBox("Connect to TCI server on launch");
     tciL->addRow("Host", m_tciHost);
     tciL->addRow("Port", m_tciPort);
+    tciL->addRow("Radio nickname", m_tciNickname);
     tciL->addRow(m_tciAutoConnect);
     tabs->addTab(tci, "TCI");
 
@@ -247,6 +256,8 @@ void SettingsDialog::populate()
 
     m_tciHost->setText(m_model->settingValue("TCI_HOST", "127.0.0.1"));
     m_tciPort->setValue(m_model->settingValue("TCI_PORT", "40001").toInt());
+    m_tciNickname->setText(m_model->settingValue(
+        tciNicknameKey(m_tciHost->text(), QString::number(m_tciPort->value()))));
     m_tciAutoConnect->setChecked(m_model->settingValue("TCI_AUTOCONNECT", "1") == "1");
 
     // DX Cluster — auto-detect from AetherSDR's config, default to "on" if
@@ -345,6 +356,13 @@ void SettingsDialog::onAccept()
                                               : m_tciHost->text().trimmed());
     m_model->setSetting("TCI_PORT",         QString::number(m_tciPort->value()));
     m_model->setSetting("TCI_AUTOCONNECT",  m_tciAutoConnect->isChecked() ? "1" : "0");
+
+    // Key the nickname off the host:port as SAVED, not as loaded — if the
+    // user repointed this dialog at a different radio, the name they just
+    // typed belongs to the new endpoint, not the old one.
+    m_model->setSetting(tciNicknameKey(m_model->settingValue("TCI_HOST", "127.0.0.1"),
+                                       m_model->settingValue("TCI_PORT", "40001")),
+                        m_tciNickname->text().trimmed());
 
     m_model->setSetting("DXC_ENABLE",       m_dxcEnable->isChecked() ? "1" : "0");
     m_model->setSetting("DXC_AUTODETECT",   m_dxcAutoDetect->isChecked() ? "1" : "0");

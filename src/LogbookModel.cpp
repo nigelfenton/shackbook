@@ -1142,6 +1142,9 @@ int LogbookModel::exportAdif(const QString& filePath, const LogbookFilter& filte
         out << adifField("STATION_CALLSIGN", q.myCall);
         out << adifField("MY_GRIDSQUARE",    q.myGridsquare);
         out << adifField("MY_STATE",         q.myState);
+        // The radio that made the QSO. MY_RIG, not STATION_CALLSIGN — that
+        // one already carries my_call, and ADIF has no better-fitting field.
+        out << adifField("MY_RIG",           q.station);
         out << adifField("TX_PWR",     fmtPwr(q.txPwr));
         out << adifField("OPERATOR",   q.myOperator);
         out << adifField("CONTEST_ID", q.contestId);

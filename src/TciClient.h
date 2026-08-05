@@ -25,6 +25,15 @@ class QTimer;
 
 namespace ShackLog {
 
+// Settings key holding the operator-set nickname for the radio reached at
+// this endpoint. Per host:port so two radios keep separate names; shared here
+// because both SettingsDialog (writes) and MainWindow (reads) need the same
+// key, and a mismatch would silently lose the nickname.
+inline QString tciNicknameKey(const QString& host, const QString& port)
+{
+    return QStringLiteral("TCI_NICKNAME_%1_%2").arg(host, port);
+}
+
 class TciClient : public QObject {
     Q_OBJECT
 
@@ -48,11 +57,20 @@ public:
     QString lastError()             const { return m_lastError; }
     QUrl    currentUrl()            const { return m_url; }
 
+    // The name the server announces for itself via `device:`.
+    //
+    // ⚠ This is the APPLICATION, not the radio: AetherSDR answers
+    // "AetherSDR" whether a Hermes-Lite 2 or a FLEX-6700 is behind it. Two
+    // radios driven by the same application are indistinguishable here, which
+    // is why a user-set nickname overrides this when attributing a QSO.
+    QString deviceName()            const { return m_device; }
+
 signals:
     void connectionChanged(bool connected);
     void frequencyChanged(double mhz);
     void modeChanged(const QString& mode);
     void serverInfoChanged(const QString& name, const QString& version);
+    void deviceNameChanged(const QString& device);
     // Diagnostic — every line received, after stripping the trailing ';'.
     void rawMessageReceived(const QString& line);
 
@@ -82,6 +100,7 @@ private:
     QString m_mode;
     QString m_protoName;
     QString m_protoVersion;
+    QString m_device;
     QString m_lastError;
 };
 

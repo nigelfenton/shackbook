@@ -49,6 +49,7 @@ private:
     // TCI
     QLineEdit*  m_tciHost{};
     QSpinBox*   m_tciPort{};
+    QLineEdit*  m_tciNickname{};
     QCheckBox*  m_tciAutoConnect{};
 
     // DX Cluster

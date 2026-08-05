@@ -103,6 +103,13 @@ void TciClient::onConnected()
 
 void TciClient::onDisconnected()
 {
+    // Forget the announced device. Without this a QSO logged after switching
+    // to a different radio would be stamped with the PREVIOUS radio's name —
+    // a wrong attribution is worse than a blank one.
+    if (!m_device.isEmpty()) {
+        m_device.clear();
+        emit deviceNameChanged(m_device);
+    }
     setConnected(false);
     if (!m_userInitiatedDisconnect) {
         scheduleReconnect();
@@ -163,6 +170,14 @@ void TciClient::parseLine(const QString& line)
         m_protoName    = args[0].trimmed();
         m_protoVersion = args[1].trimmed();
         emit serverInfoChanged(m_protoName, m_protoVersion);
+    } else if (cmd == "device" && args.size() >= 1) {
+        // device:<name> — announced once on connect. Identifies the SERVER
+        // APPLICATION (e.g. "AetherSDR"), not the radio behind it.
+        const QString d = args[0].trimmed();
+        if (!d.isEmpty() && d != m_device) {
+            m_device = d;
+            emit deviceNameChanged(m_device);
+        }
     } else if (cmd == "if" && args.size() >= 3) {
         // Some servers send `if:` instead of `vfo:` for the RX freq.
         if (args[0].trimmed() == "0" && args[1].trimmed() == "0") {

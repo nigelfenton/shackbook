@@ -70,6 +70,7 @@ Qso qsoFromFields(const QHash<QString, QString>& f)
     q.myCall       = f.value(QStringLiteral("station_callsign"));
     q.myGridsquare = f.value(QStringLiteral("my_gridsquare"));
     q.myState      = f.value(QStringLiteral("my_state"));
+    q.station      = f.value(QStringLiteral("my_rig"));   // round-trips our own export
     q.txPwr        = f.value(QStringLiteral("tx_pwr")).toDouble();
     q.myOperator   = f.value(QStringLiteral("operator"));
     q.contestId    = f.value(QStringLiteral("contest_id"));
