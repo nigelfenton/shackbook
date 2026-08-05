@@ -1134,6 +1134,7 @@ bool MainWindow::chooseAndOpenLog(bool startup)
     // leaving the previous log's link (or no link) in place. This was invisible
     // while every log used the same TCI endpoint; it stopped being true once a
     // log could choose rigctld instead.
+    m_warnedNoHamlib = false;          // a new log deserves the warning afresh
     onDisconnectTci();                 // stops whichever source was live
     applyAutoConnectFromSettings();    // reconnects per the new log's settings
 
@@ -1396,6 +1397,20 @@ void MainWindow::connectActiveSource()
         const QString host = m_model->settingValue("RIGCTLD_HOST", "127.0.0.1");
         const quint16 port = static_cast<quint16>(
             m_model->settingValue("RIGCTLD_PORT", "4532").toUInt());
+
+        // ⛔ Distinguish "Hamlib is not installed" from "it is installed but
+        // nothing answered". Both end as no-connection, and only the first is
+        // fixed by installing something — collapsing them into one message
+        // sends the operator hunting the wrong problem. Only report the
+        // missing case ONCE per log, or it nags on every reconnect attempt.
+        const QString rigctld = RigctldClient::findRigctld(
+            m_model->settingValue("HAMLIB_RIGCTLD_PATH"));
+        if (rigctld.isEmpty() && !m_warnedNoHamlib) {
+            m_warnedNoHamlib = true;
+            statusBar()->showMessage(tr("Hamlib (rigctld) not found — see Settings → TCI"),
+                                     8000);
+        }
+
         m_rigctld->connectToServer(host, port);
         statusBar()->showMessage(
             tr("Connecting to rigctld at %1:%2…").arg(host).arg(port), 3000);

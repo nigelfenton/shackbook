@@ -143,6 +143,9 @@ private:
     // else Hamlib drives. Exactly one of the two is connected at a time —
     // both following the same radio would fight over the CAT port.
     RigctldClient*   m_rigctld{nullptr};
+    // "Hamlib not found" is said once per log, not on every reconnect attempt —
+    // the backoff would otherwise turn a true statement into nagging.
+    bool             m_warnedNoHamlib{false};
     SpotIndex*       m_spotIndex{nullptr};
     DxClusterClient* m_dxc{nullptr};
     PotaClient*      m_pota{nullptr};

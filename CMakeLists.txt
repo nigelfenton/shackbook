@@ -249,6 +249,15 @@ if(SHACKLOG_TESTS)
     target_link_libraries(tci_discovery_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
     add_test(NAME tci_discovery_test COMMAND tci_discovery_test)
 
+    add_executable(hamlib_detect_test
+        tests/hamlib_detect_test.cpp
+        src/RigctldClient.cpp
+        src/RigctldClient.h
+    )
+    target_include_directories(hamlib_detect_test PRIVATE src)
+    target_link_libraries(hamlib_detect_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME hamlib_detect_test COMMAND hamlib_detect_test)
+
     add_executable(rigctld_client_test
         tests/rigctld_client_test.cpp
         src/RigctldClient.cpp

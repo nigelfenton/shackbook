@@ -29,6 +29,14 @@ Or build from source — see [Build](#build).
 
 ### Logging
 - **Live freq / band / mode auto-fill** from a TCI server (default `ws://127.0.0.1:40001`), with auto-reconnect
+- **Find radios** (Tools → Find radios…) — scans for TCI servers and offers what it
+  finds. Only servers that answer a real handshake are listed; a port that merely
+  accepts a connection is not a radio.
+- **Radios without TCI** — Icom, Yaesu, Kenwood and anything else
+  [Hamlib](https://hamlib.github.io/) drives, followed through its `rigctld`
+  (Settings → TCI → *Follow radio via*). Hamlib reports the **radio's own model**, so
+  contacts are attributed correctly with no nickname needed. ⚠ Hamlib is not included —
+  see [Following a non-TCI radio](#following-a-non-tci-radio).
 - Quick QSO entry: callsign + RST sent/received + comment, then `SAVE`
 - Real-time **duplicate-check** warning as you type a callsign
 - Full-fidelity QSO editor (Core / Other Station / My Station / Contest / Notes & QSL)
@@ -112,6 +120,31 @@ ctest --test-dir build-tests --output-on-failure
 On Windows, `build-tests.bat` does the same. A build is marked `-dev` in the
 window title unless configured with `-DSHACKLOG_RELEASE=ON`, so it is always
 obvious whether you are running an installed release or something you built.
+
+## Following a non-TCI radio
+
+TCI is built into AetherSDR, ExpertSDR and SunSDR — if you use one of those, there is
+nothing extra to install and you can skip this section.
+
+Every other radio is reached through **[Hamlib](https://hamlib.github.io/)**, which drives
+around 200 rigs and exposes them on a single network port via its `rigctld` program.
+**ShackLog does not include Hamlib** — it is a separate project under a different licence,
+and if you already run WSJT-X or fldigi you almost certainly have it already.
+
+1. Install Hamlib (`apt install libhamlib-utils` on Debian/Ubuntu,
+   `brew install hamlib` on macOS, or the Windows build from the Hamlib site).
+2. Start it, pointed at your radio — for example an IC-9700 on `COM4`:
+   ```sh
+   rigctld -m 3081 -r COM4 -s 19200
+   ```
+   `rigctl --list` shows the model number for your rig.
+3. In ShackLog, **Settings → TCI → Follow radio via → Hamlib rigctld**. The default
+   host and port (`127.0.0.1:4532`) suit a local radio.
+
+ShackLog tells you if it cannot find Hamlib, and lets you point at it if you installed it
+somewhere unusual. **It will not start `rigctld` for you** — that program takes the serial
+port exclusively, and a second copy fighting the first is a classic cause of CAT failure
+mid-contest. Start it yourself, once, and leave it running.
 
 ## Database location
 

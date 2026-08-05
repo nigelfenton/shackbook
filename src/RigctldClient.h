@@ -51,6 +51,17 @@ public:
     // Hamlib's default port, and the next one up for a second instance.
     static quint16 defaultPort() { return 4532; }
 
+    // ── Is Hamlib actually here? ───────────────────────────────────────
+    // ShackLog does not ship Hamlib, so the operator may simply not have it.
+    // ⛔ That must never look like a connection failure: "not installed", "a
+    // radio that is off", "the wrong port" and "a firewall" all present as
+    // no-connection, and only the first has a different fix.
+    //
+    // Resolution order mirrors LotwDialog's tqsl lookup, which is proven in
+    // this codebase: a configured path wins, then the usual install locations,
+    // then PATH. Returns an empty string when nothing was found.
+    static QString findRigctld(const QString& configuredPath = {});
+
     void connectToServer(const QString& host, quint16 port);
     void disconnectFromServer();
 

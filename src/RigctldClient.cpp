@@ -1,5 +1,7 @@
 #include "RigctldClient.h"
 
+#include <QFileInfo>
+#include <QStandardPaths>
 #include <QTcpSocket>
 #include <QTimer>
 
@@ -42,6 +44,42 @@ RigctldClient::RigctldClient(QObject* parent)
 }
 
 RigctldClient::~RigctldClient() = default;
+
+QString RigctldClient::findRigctld(const QString& configuredPath)
+{
+    // An explicitly configured path wins — the operator knows where they put
+    // it, and a non-standard install is exactly why the setting exists.
+    const QString configured = configuredPath.trimmed();
+    if (!configured.isEmpty())
+        return QFileInfo::exists(configured) ? configured : QString{};
+
+    // The usual places, checked before PATH so a normal install is found even
+    // when the shell environment does not include it — the common case on
+    // Windows, where installers rarely amend PATH.
+    const QStringList candidates = {
+#ifdef Q_OS_WIN
+        QStringLiteral("C:/Program Files/hamlib/bin/rigctld.exe"),
+        QStringLiteral("C:/Program Files (x86)/hamlib/bin/rigctld.exe"),
+        // WSJT-X and fldigi ship Hamlib; a user who has either very likely
+        // already has rigctld, which is the whole reason not to bundle it.
+        QStringLiteral("C:/Program Files/WSJT/wsjtx/bin/rigctld.exe"),
+        QStringLiteral("C:/Program Files (x86)/WSJT/wsjtx/bin/rigctld.exe"),
+        QStringLiteral("C:/Program Files/fldigi/rigctld.exe"),
+#elif defined(Q_OS_MACOS)
+        QStringLiteral("/opt/homebrew/bin/rigctld"),
+        QStringLiteral("/usr/local/bin/rigctld"),
+        QStringLiteral("/Applications/wsjtx.app/Contents/MacOS/rigctld"),
+#else
+        QStringLiteral("/usr/bin/rigctld"),
+        QStringLiteral("/usr/local/bin/rigctld"),
+#endif
+    };
+    for (const QString& c : candidates)
+        if (QFileInfo::exists(c)) return c;
+
+    // PATH covers Linux packages, Homebrew, and any custom install.
+    return QStandardPaths::findExecutable(QStringLiteral("rigctld"));
+}
 
 void RigctldClient::setPollIntervalMs(int ms)
 {

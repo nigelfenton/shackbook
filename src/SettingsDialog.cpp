@@ -106,6 +106,22 @@ void SettingsDialog::buildUI()
         "model, so contacts are attributed correctly without a nickname.");
     tciL->addRow("Follow radio via", m_radioSource);
 
+    // ShackLog does not ship Hamlib, so say plainly whether it is here. Without
+    // this the operator gets "CAT: ✗" and no way to tell "not installed" from
+    // "radio switched off" — different problems with different fixes.
+    m_hamlibStatus = new QLabel;
+    m_hamlibStatus->setWordWrap(true);
+    m_hamlibStatus->setOpenExternalLinks(true);
+    m_hamlibStatus->setTextFormat(Qt::RichText);
+    tciL->addRow(QString(), m_hamlibStatus);
+
+    m_rigctldPath = new QLineEdit;
+    m_rigctldPath->setPlaceholderText("auto-detect");
+    m_rigctldPath->setToolTip(
+        "Where rigctld lives, if ShackLog cannot find it on its own.\n\n"
+        "Leave blank to look in the usual places and on PATH.");
+    tciL->addRow("rigctld program", m_rigctldPath);
+
     m_tciScan = new QPushButton("Find radios…");
     m_tciScan->setToolTip(
         "Look for TCI servers on this machine and the host above.\n\n"
@@ -297,9 +313,16 @@ void SettingsDialog::populate()
         m_tciNickname->setText(m_model->settingValue(
             rig ? rigctldNicknameKey(h, p) : tciNicknameKey(h, p)));
     };
+    m_rigctldPath->setText(m_model->settingValue("HAMLIB_RIGCTLD_PATH"));
     loadEndpoint();
     connect(m_radioSource, &QComboBox::currentIndexChanged, this,
-            [loadEndpoint](int) { loadEndpoint(); });
+            [this, loadEndpoint](int) {
+                loadEndpoint();
+                refreshHamlibGuidance();
+            });
+    connect(m_rigctldPath, &QLineEdit::textChanged, this,
+            [this](const QString&) { refreshHamlibGuidance(); });
+    refreshHamlibGuidance();
     m_tciAutoConnect->setChecked(m_model->settingValue("TCI_AUTOCONNECT", "1") == "1");
 
     // DX Cluster — auto-detect from AetherSDR's config, default to "on" if
@@ -383,6 +406,39 @@ void SettingsDialog::populate()
     setCombo(m_cbCatPower,       m_model->settingValue("CABRILLO_CAT_POWER",        "HIGH"));
     setCombo(m_cbCatStation,     m_model->settingValue("CABRILLO_CAT_STATION",      "FIXED"));
     setCombo(m_cbCatTransmitter, m_model->settingValue("CABRILLO_CAT_TRANSMITTER",  "ONE"));
+}
+
+void SettingsDialog::refreshHamlibGuidance()
+{
+    if (!m_hamlibStatus) return;
+
+    const bool rig = m_radioSource->currentData().toString() == QLatin1String("rigctld");
+    // Only relevant when a CAT radio is selected. Saying nothing for TCI users
+    // keeps the requirement from reading as a barrier to the whole app.
+    m_hamlibStatus->setVisible(rig);
+    m_rigctldPath->setVisible(rig);
+    if (!rig) return;
+
+    const QString found = RigctldClient::findRigctld(m_rigctldPath->text());
+
+    if (found.isEmpty()) {
+        m_hamlibStatus->setStyleSheet("QLabel { color: #d08a3e; font-size: 11px; }");
+        m_hamlibStatus->setText(tr(
+            "<b>Hamlib not found.</b> Following a non-TCI radio needs Hamlib's "
+            "<code>rigctld</code>, which ShackLog does not include. "
+            "<a href=\"https://hamlib.github.io/\">Get Hamlib</a> — or if you "
+            "already run WSJT-X or fldigi you very likely have it, and can point "
+            "at it above. ShackLog will not start it for you: run it yourself so "
+            "nothing else loses the serial port."));
+        return;
+    }
+
+    m_hamlibStatus->setStyleSheet("QLabel { color: #6b8099; font-size: 11px; }");
+    m_hamlibStatus->setText(tr(
+        "Hamlib found at <code>%1</code>. It still has to be RUNNING and "
+        "connected to the radio — ShackLog only talks to it, and does not "
+        "start it. For example:<br><code>rigctld -m &lt;model&gt; -r &lt;port&gt;</code>")
+            .arg(found.toHtmlEscaped()));
 }
 
 void SettingsDialog::onScanForRadios()
@@ -472,6 +528,7 @@ void SettingsDialog::onAccept()
     const QString port = QString::number(m_tciPort->value());
     m_model->setSetting(rig ? "RIGCTLD_HOST" : "TCI_HOST", host);
     m_model->setSetting(rig ? "RIGCTLD_PORT" : "TCI_PORT", port);
+    m_model->setSetting("HAMLIB_RIGCTLD_PATH", m_rigctldPath->text().trimmed());
     m_model->setSetting("TCI_AUTOCONNECT",  m_tciAutoConnect->isChecked() ? "1" : "0");
 
     // Key the nickname off the host:port as SAVED, not as loaded — if the

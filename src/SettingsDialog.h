@@ -34,6 +34,9 @@ private slots:
     void onAccept();
     // Scan for TCI servers and fill in the host/port of whichever is chosen.
     void onScanForRadios();
+    // Say whether Hamlib is present, and what to do if it is not. Rerun
+    // whenever the source or the configured path changes.
+    void refreshHamlibGuidance();
 
 private:
     void buildUI();
@@ -52,6 +55,8 @@ private:
     QLineEdit*  m_tciHost{};
     QSpinBox*   m_tciPort{};
     QComboBox*   m_radioSource{};
+    QLabel*      m_hamlibStatus{};
+    QLineEdit*   m_rigctldPath{};
     QPushButton* m_tciScan{};
     QLineEdit*  m_tciNickname{};
     QCheckBox*  m_tciAutoConnect{};
