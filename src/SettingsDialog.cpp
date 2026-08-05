@@ -3,6 +3,7 @@
 #include "LogbookModel.h"
 #include "AetherSettingsReader.h"
 #include "TciClient.h"      // tciNicknameKey()
+#include "RigctldClient.h"   // rigctldNicknameKey()
 #include "TciDiscovery.h"
 
 #include <QComboBox>
@@ -94,6 +95,17 @@ void SettingsDialog::buildUI()
         "rigs driven by the same software look identical without a nickname.\n\n"
         "Stored per host:port. Leave blank to record the announced name.");
     m_tciAutoConnect = new QCheckBox("Connect to TCI server on launch");
+    m_radioSource = new QComboBox;
+    m_radioSource->addItem("TCI — AetherSDR, ExpertSDR, SunSDR", "tci");
+    m_radioSource->addItem("Hamlib rigctld — Icom, Yaesu, Kenwood, others", "rigctld");
+    m_radioSource->setToolTip(
+        "How ShackLog follows your radio.\n\n"
+        "TCI is built into AetherSDR and ExpertSDR — nothing else to install.\n\n"
+        "rigctld covers everything else, but needs Hamlib installed and running "
+        "(ShackLog does not include it). Its advantage: it reports the RADIO's "
+        "model, so contacts are attributed correctly without a nickname.");
+    tciL->addRow("Follow radio via", m_radioSource);
+
     m_tciScan = new QPushButton("Find radios…");
     m_tciScan->setToolTip(
         "Look for TCI servers on this machine and the host above.\n\n"
@@ -267,10 +279,27 @@ void SettingsDialog::populate()
     m_defaultTxPwr->setValue(m_model->defaultTxPwr());
     m_myOperator->setText(m_model->settingValue("MY_OPERATOR"));
 
-    m_tciHost->setText(m_model->settingValue("TCI_HOST", "127.0.0.1"));
-    m_tciPort->setValue(m_model->settingValue("TCI_PORT", "40001").toInt());
-    m_tciNickname->setText(m_model->settingValue(
-        tciNicknameKey(m_tciHost->text(), QString::number(m_tciPort->value()))));
+    {
+        const QString src = m_model->settingValue("RADIO_SOURCE", "tci");
+        const int idx = m_radioSource->findData(src);
+        m_radioSource->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
+    // Host and port belong to whichever source is selected, so switching the
+    // combo swaps them rather than leaving a TCI port against a CAT radio.
+    const auto loadEndpoint = [this]() {
+        const bool rig = m_radioSource->currentData().toString() == QLatin1String("rigctld");
+        m_tciHost->setText(m_model->settingValue(rig ? "RIGCTLD_HOST" : "TCI_HOST",
+                                                 "127.0.0.1"));
+        m_tciPort->setValue(m_model->settingValue(rig ? "RIGCTLD_PORT" : "TCI_PORT",
+                                                  rig ? "4532" : "40001").toInt());
+        const QString h = m_tciHost->text();
+        const QString p = QString::number(m_tciPort->value());
+        m_tciNickname->setText(m_model->settingValue(
+            rig ? rigctldNicknameKey(h, p) : tciNicknameKey(h, p)));
+    };
+    loadEndpoint();
+    connect(m_radioSource, &QComboBox::currentIndexChanged, this,
+            [loadEndpoint](int) { loadEndpoint(); });
     m_tciAutoConnect->setChecked(m_model->settingValue("TCI_AUTOCONNECT", "1") == "1");
 
     // DX Cluster — auto-detect from AetherSDR's config, default to "on" if
@@ -431,17 +460,24 @@ void SettingsDialog::onAccept()
     m_model->setSetting("DEFAULT_TX_PWR",   QString::number(m_defaultTxPwr->value(), 'f', 1));
     m_model->setSetting("MY_OPERATOR",      m_myOperator->text().trimmed().toUpper());
 
-    m_model->setSetting("TCI_HOST",         m_tciHost->text().trimmed().isEmpty()
-                                              ? QStringLiteral("127.0.0.1")
-                                              : m_tciHost->text().trimmed());
-    m_model->setSetting("TCI_PORT",         QString::number(m_tciPort->value()));
+    const QString source = m_radioSource->currentData().toString();
+    const bool rig = source == QLatin1String("rigctld");
+    m_model->setSetting("RADIO_SOURCE", source);
+
+    // Host and port are saved against the SELECTED source, so switching back
+    // to TCI later finds its own endpoint rather than a CAT one.
+    const QString host = m_tciHost->text().trimmed().isEmpty()
+                             ? QStringLiteral("127.0.0.1")
+                             : m_tciHost->text().trimmed();
+    const QString port = QString::number(m_tciPort->value());
+    m_model->setSetting(rig ? "RIGCTLD_HOST" : "TCI_HOST", host);
+    m_model->setSetting(rig ? "RIGCTLD_PORT" : "TCI_PORT", port);
     m_model->setSetting("TCI_AUTOCONNECT",  m_tciAutoConnect->isChecked() ? "1" : "0");
 
     // Key the nickname off the host:port as SAVED, not as loaded — if the
     // user repointed this dialog at a different radio, the name they just
     // typed belongs to the new endpoint, not the old one.
-    m_model->setSetting(tciNicknameKey(m_model->settingValue("TCI_HOST", "127.0.0.1"),
-                                       m_model->settingValue("TCI_PORT", "40001")),
+    m_model->setSetting(rig ? rigctldNicknameKey(host, port) : tciNicknameKey(host, port),
                         m_tciNickname->text().trimmed());
 
     m_model->setSetting("DXC_ENABLE",       m_dxcEnable->isChecked() ? "1" : "0");

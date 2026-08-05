@@ -3,6 +3,7 @@
 #include "AwardsDialog.h"
 #include "LogbookModel.h"
 #include "TciClient.h"
+#include "RigctldClient.h"
 #include "TciDiscovery.h"
 #include "Version.h"
 #include "server/WsjtxAdifReceiver.h"
@@ -156,6 +157,7 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent),
       m_model(new LogbookModel(this)),
       m_tci(new TciClient(this)),
+      m_rigctld(new RigctldClient(this)),
       m_spotIndex(new SpotIndex(this)),
       m_dxc(new DxClusterClient(this)),
       m_pota(new PotaClient(this)),
@@ -235,6 +237,19 @@ MainWindow::MainWindow(QWidget* parent)
     });
     connect(m_tci, &TciClient::frequencyChanged,  this, &MainWindow::onTciFrequencyChanged);
     connect(m_tci, &TciClient::modeChanged,       this, &MainWindow::onTciModeChanged);
+
+    // rigctld feeds the SAME handlers. Frequency and mode are frequency and
+    // mode whatever carried them, so the rest of the app never learns which
+    // kind of radio is attached.
+    connect(m_rigctld, &RigctldClient::connectionChanged,
+            this, &MainWindow::onTciConnectionChanged);
+    connect(m_rigctld, &RigctldClient::frequencyChanged,
+            this, &MainWindow::onTciFrequencyChanged);
+    connect(m_rigctld, &RigctldClient::modeChanged,
+            this, &MainWindow::onTciModeChanged);
+    connect(m_rigctld, &RigctldClient::modelNameChanged, this, [this](const QString&) {
+        refreshStatusBar();
+    });
 
     connect(m_dxc, &DxClusterClient::connectionChanged,
             this, &MainWindow::onClusterConnectionChanged);
@@ -1036,8 +1051,10 @@ void MainWindow::onSettings()
     if (dlg.exec() == QDialog::Accepted) {
         // If TCI host/port changed and we're connected, reconnect to pick
         // up the new endpoint.
-        if (m_tci->connected()) {
-            m_tci->disconnectFromServer();
+        // Reconnect if either link was live — the operator may have changed
+        // host/port, or switched between TCI and rigctld entirely.
+        if (m_tci->connected() || m_rigctld->connected()) {
+            onDisconnectTci();          // stops both
             applyAutoConnectFromSettings();
         }
         // Cluster config may have changed too — reapply unconditionally
@@ -1111,6 +1128,15 @@ bool MainWindow::chooseAndOpenLog(bool startup)
     m_operatorCall = call;
     settings.setValue("lastOperator", call);
     setWindowTitle(windowTitleFor(call));
+
+    // Radio settings live IN the log, so switching logs can change the radio —
+    // including which kind. Reconnect against the newly-opened log rather than
+    // leaving the previous log's link (or no link) in place. This was invisible
+    // while every log used the same TCI endpoint; it stopped being true once a
+    // log could choose rigctld instead.
+    onDisconnectTci();                 // stops whichever source was live
+    applyAutoConnectFromSettings();    // reconnects per the new log's settings
+
     // Integrity/restore events must reach the operator, not just the log:
     // a silently-restored logbook is how a week of QSOs goes missing twice.
     if (!m_model->openNotice().isEmpty()) {
@@ -1351,24 +1377,61 @@ void MainWindow::onFindRadios()
     onConnectTci();
 }
 
-void MainWindow::onConnectTci()
+bool MainWindow::usingRigctld() const
+{
+    return m_model
+           && m_model->settingValue(QStringLiteral("RADIO_SOURCE"),
+                                    QStringLiteral("tci")) == QLatin1String("rigctld");
+}
+
+void MainWindow::connectActiveSource()
 {
     if (!m_model) return;
-    const QString host = m_model->settingValue("TCI_HOST", "127.0.0.1");
-    const quint16 port = static_cast<quint16>(m_model->settingValue("TCI_PORT", "40001").toUInt());
-    m_tci->connectToServer(host, port);
-    statusBar()->showMessage(QString("Connecting to %1:%2…").arg(host).arg(port), 3000);
+
+    // Only one link at a time. Two clients following one radio would poll the
+    // same CAT port against each other — the "several programs fighting over
+    // one port" failure the Field Day notes name explicitly.
+    if (usingRigctld()) {
+        m_tci->disconnectFromServer();
+        const QString host = m_model->settingValue("RIGCTLD_HOST", "127.0.0.1");
+        const quint16 port = static_cast<quint16>(
+            m_model->settingValue("RIGCTLD_PORT", "4532").toUInt());
+        m_rigctld->connectToServer(host, port);
+        statusBar()->showMessage(
+            tr("Connecting to rigctld at %1:%2…").arg(host).arg(port), 3000);
+    } else {
+        m_rigctld->disconnectFromServer();
+        const QString host = m_model->settingValue("TCI_HOST", "127.0.0.1");
+        const quint16 port = static_cast<quint16>(
+            m_model->settingValue("TCI_PORT", "40001").toUInt());
+        m_tci->connectToServer(host, port);
+        statusBar()->showMessage(
+            tr("Connecting to %1:%2…").arg(host).arg(port), 3000);
+    }
+}
+
+void MainWindow::onConnectTci()
+{
+    connectActiveSource();
 }
 
 void MainWindow::onDisconnectTci()
 {
+    // Stop both regardless of which is selected: if the setting changed while
+    // one was live, the other would otherwise be left connected invisibly.
     m_tci->disconnectFromServer();
+    m_rigctld->disconnectFromServer();
 }
 
 void MainWindow::onTciConnectionChanged(bool connected)
 {
     m_tciDot->setStyleSheet(connected ? kTciDotConnected : kTciDotDisconnected);
-    m_tciStatus->setText(connected ? "TCI live" : "TCI offline");
+    // Name the link that is actually in use — "TCI offline" while following a
+    // radio over CAT is simply wrong, and sends the operator to the wrong
+    // settings when something is not working.
+    const QString what = usingRigctld() ? QStringLiteral("CAT") : QStringLiteral("TCI");
+    m_tciStatus->setText(connected ? what + QStringLiteral(" live")
+                                   : what + QStringLiteral(" offline"));
     refreshStatusBar();
     if (!connected) {
         // Don't clear cached freq/mode — keep them so a brief disconnect
@@ -1779,7 +1842,23 @@ QString MainWindow::windowTitleFor(const QString& operatorCall)
 
 QString MainWindow::currentRadioName() const
 {
-    if (!m_model || !m_tci || !m_tci->connected()) return {};
+    if (!m_model) return {};
+
+    if (usingRigctld()) {
+        if (!m_rigctld || !m_rigctld->connected()) return {};
+        // A nickname still wins — an operator with two IC-9700s needs to tell
+        // them apart — but it is rarely needed here: `\get_info` names the
+        // RADIO ("IC-9700"), not the application, so unlike TCI the announced
+        // name is already the right answer.
+        const QString host = m_model->settingValue("RIGCTLD_HOST", "127.0.0.1");
+        const QString port = m_model->settingValue("RIGCTLD_PORT", "4532");
+        const QString nick =
+            m_model->settingValue(rigctldNicknameKey(host, port), {}).trimmed();
+        if (!nick.isEmpty()) return nick;
+        return m_rigctld->modelName().trimmed();
+    }
+
+    if (!m_tci || !m_tci->connected()) return {};
 
     // A nickname is stored per host:port, so two radios reached at different
     // endpoints keep separate names. It wins over `device:` because TCI's
@@ -1798,17 +1877,25 @@ QString MainWindow::currentRadioName() const
 void MainWindow::refreshStatusBar()
 {
     if (!m_model) return;
-    const QString host = m_model->settingValue("TCI_HOST", "127.0.0.1");
-    const QString port = m_model->settingValue("TCI_PORT", "40001");
+    // Label the link by what it actually is, so "no radio" is never ambiguous
+    // between "TCI is off" and "rigctld is not running".
+    const bool rig = usingRigctld();
+    const QString label = rig ? QStringLiteral("CAT") : QStringLiteral("TCI");
+    const QString host = rig ? m_model->settingValue("RIGCTLD_HOST", "127.0.0.1")
+                             : m_model->settingValue("TCI_HOST", "127.0.0.1");
+    const QString port = rig ? m_model->settingValue("RIGCTLD_PORT", "4532")
+                             : m_model->settingValue("TCI_PORT", "40001");
+    const bool up = rig ? (m_rigctld && m_rigctld->connected())
+                        : (m_tci && m_tci->connected());
     // Show the radio being logged against, so what lands in the QSO is
     // visible before it is saved rather than discovered afterwards.
     const QString radio = currentRadioName();
     m_sbTci->setText(radio.isEmpty()
-                         ? QString("TCI: %1 %2:%3")
-                               .arg(m_tci->connected() ? "✓" : "✗")
+                         ? QString("%1: %2 %3:%4")
+                               .arg(label).arg(up ? "✓" : "✗")
                                .arg(host).arg(port)
-                         : QString("TCI: %1 %2 @ %3:%4")
-                               .arg(m_tci->connected() ? "✓" : "✗")
+                         : QString("%1: %2 %3 @ %4:%5")
+                               .arg(label).arg(up ? "✓" : "✗")
                                .arg(radio).arg(host).arg(port));
 
     if (m_dxc && m_sbDxc) {

@@ -51,6 +51,7 @@ private:
     // TCI
     QLineEdit*  m_tciHost{};
     QSpinBox*   m_tciPort{};
+    QComboBox*   m_radioSource{};
     QPushButton* m_tciScan{};
     QLineEdit*  m_tciNickname{};
     QCheckBox*  m_tciAutoConnect{};

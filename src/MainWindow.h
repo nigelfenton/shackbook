@@ -33,6 +33,7 @@ namespace ShackLog {
 
 class LogbookModel;
 class TciClient;
+class RigctldClient;
 class SpotIndex;
 class DxClusterClient;
 class PotaClient;
@@ -80,6 +81,11 @@ private slots:
     void onConnectTci();
     // Scan for TCI servers and offer what answered a real handshake.
     void onFindRadios();
+    // Which kind of radio link is in use: TCI (AetherSDR/ExpertSDR/SunSDR) or
+    // Hamlib rigctld (everything else). Stored per log as RADIO_SOURCE.
+    bool usingRigctld() const;
+    // Connect whichever source RADIO_SOURCE selects.
+    void connectActiveSource();
     void onDisconnectTci();
     void onTciConnectionChanged(bool connected);
     void onTciFrequencyChanged(double mhz);
@@ -133,6 +139,10 @@ private:
 
     LogbookModel*    m_model{nullptr};
     TciClient*       m_tci{nullptr};
+    // The non-TCI path: Hamlib rigctld, for Icom/Yaesu/Kenwood and anything
+    // else Hamlib drives. Exactly one of the two is connected at a time —
+    // both following the same radio would fight over the CAT port.
+    RigctldClient*   m_rigctld{nullptr};
     SpotIndex*       m_spotIndex{nullptr};
     DxClusterClient* m_dxc{nullptr};
     PotaClient*      m_pota{nullptr};
