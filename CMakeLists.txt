@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(ShackLog
-    VERSION 0.4.1
+    VERSION 0.5.0
     DESCRIPTION "Standalone ham radio logbook with TCI integration"
     LANGUAGES CXX)
 

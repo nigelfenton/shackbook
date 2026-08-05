@@ -6,6 +6,35 @@ All notable changes to ShackLog are recorded here. The format follows
 `vX.Y.Z` tag; CI then builds the Windows installer + zip, Linux AppImage, and
 macOS DMG and attaches them to the GitHub release.
 
+## [0.5.0] - 2026-08-05
+
+### Added
+- **Every QSO now records which radio made it.** With several radios in the
+  shack, a finished log could not answer "which rig worked that station?" —
+  the `station` column existed but was never written. ShackLog now takes the
+  radio name from the TCI connection, shows it in the status bar while you
+  work (`TCI: ✓ Hermes-Lite 2 @ 127.0.0.1:40001`), and stores it on each QSO.
+  It exports as ADIF `MY_RIG` and reads back in, so it survives a round-trip.
+  - **Radio nickname** (Settings → TCI) — TCI reports the *application*, not
+    the radio, so AetherSDR answers "AetherSDR" whether a Hermes-Lite 2 or a
+    FLEX-6700 is behind it. A nickname is the only thing that can tell two
+    rigs on the same software apart, so it takes precedence over the
+    announced name. It is remembered per host and port.
+  - **A blank is better than a guess** — a QSO logged while TCI is
+    disconnected records no radio at all, rather than inheriting whichever
+    radio was connected last. Existing QSOs are left untouched.
+
+- **The window title and About box now show the version**, and any build that
+  is not an official release is marked `-dev` (e.g. `ShackLog — G0JKN —
+  0.5.0-dev`). An installed copy and a freshly built one are otherwise
+  indistinguishable on screen, which has cost real debugging time — a feature
+  was once tested against a months-old installed binary and appeared broken.
+
+### Changed
+- The version is now taken from the build system in one place instead of being
+  typed into a source file, where it had previously drifted several releases
+  behind without anyone noticing.
+
 ## [0.4.1] - 2026-07-30
 
 ### Added

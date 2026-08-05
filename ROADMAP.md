@@ -6,20 +6,12 @@ items live in the [CHANGELOG](CHANGELOG.md).
 
 ## Near term
 
-- **Record which radio made each QSO**
-  ([#2](https://github.com/nigelfenton/shacklog/issues/2)) — the `qsos.station`
-  column exists but is never written, so after the fact there is no way to tell
-  one rig's contacts from another's. Capture the TCI `device:` field, show it in
-  the status bar, and store it on save. A per-connection **nickname** is required
-  rather than optional: TCI's `device:` reports the *application*, so AetherSDR
-  answers the same name whichever radio is behind it. Precedence: nickname →
-  `device:` → host:port.
 - **Session Map** ([#3](https://github.com/nigelfenton/shacklog/issues/3)) —
   plot where *this evening's* contacts went, not the whole log: band-coloured
   points with great-circle lines, on the existing Grid Map engine. Answers "did
   that new antenna change the footprint?". Needs a session definition first —
-  gap-based with a selectable window is the suggested default. Pairs with #2:
-  once the radio is recorded, a session map can distinguish rigs.
+  gap-based with a selectable window is the suggested default. Now that #2 has
+  shipped and the radio is recorded, a session map can distinguish rigs.
 - **Visual stats dashboard** — the awards data is computed today but only shown
   as a text report. A visual panel (worked/confirmed by band + mode + DXCC,
   a simple chart) would make it far more useful at a glance.
