@@ -37,6 +37,8 @@ set(SHACKLOG_SOURCES
     src/TciClient.h
     src/TciDiscovery.cpp
     src/TciDiscovery.h
+    src/RigctldClient.cpp
+    src/RigctldClient.h
     src/LogbookModel.cpp
     src/LogbookModel.h
     src/AdifReader.cpp
@@ -246,6 +248,26 @@ if(SHACKLOG_TESTS)
     target_include_directories(tci_discovery_test PRIVATE src)
     target_link_libraries(tci_discovery_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
     add_test(NAME tci_discovery_test COMMAND tci_discovery_test)
+
+    add_executable(rigctld_client_test
+        tests/rigctld_client_test.cpp
+        src/RigctldClient.cpp
+        src/RigctldClient.h
+    )
+    target_include_directories(rigctld_client_test PRIVATE src)
+    target_link_libraries(rigctld_client_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME rigctld_client_test COMMAND rigctld_client_test)
+
+    # Bench tool, not a test: points the real client at an EXTERNAL rigctld
+    # (the Python personas, or a real radio). Deliberately not add_test'd —
+    # it needs something running to talk to.
+    add_executable(rigctld_live_probe
+        tests/rigctld_live_probe.cpp
+        src/RigctldClient.cpp
+        src/RigctldClient.h
+    )
+    target_include_directories(rigctld_live_probe PRIVATE src)
+    target_link_libraries(rigctld_live_probe PRIVATE Qt6::Core Qt6::Network)
 
     add_executable(radio_attribution_test
         tests/radio_attribution_test.cpp
