@@ -6,6 +6,17 @@ items live in the [CHANGELOG](CHANGELOG.md).
 
 ## Near term
 
+- **Native CAT, without Hamlib** — v0.6.0 reaches non-TCI radios through Hamlib's
+  `rigctld`, which works but asks the operator to install and run a separate
+  program. For what a logbook actually needs — frequency, mode, and the radio's
+  name — that is a large dependency: three commands out of a library built to
+  handle ~200 rigs completely. Reading those directly over the serial port is
+  modest per family: Kenwood is plain ASCII (`FA;`), Icom CI-V and Yaesu are short
+  binary frames. Covering those three families would let most radios work with no
+  install step at all.
+  - ⚠ Keep the `rigctld` path as the escape hatch. It covers the long tail of
+    older and stranger radios, and — the real argument — it lets ShackLog and
+    WSJT-X share one radio instead of fighting over one COM port.
 - **Session Map** ([#3](https://github.com/nigelfenton/shacklog/issues/3)) —
   plot where *this evening's* contacts went, not the whole log: band-coloured
   points with great-circle lines, on the existing Grid Map engine. Answers "did

@@ -6,6 +6,46 @@ All notable changes to ShackLog are recorded here. The format follows
 `vX.Y.Z` tag; CI then builds the Windows installer + zip, Linux AppImage, and
 macOS DMG and attaches them to the GitHub release.
 
+## [0.6.0] - 2026-08-05
+
+### Added
+- **Find radios** (Tools → Find radios…, and a button in Settings → TCI) — ShackLog
+  now looks for TCI servers instead of asking you to type a host and port. Pick one
+  from the list and it connects.
+  - Only servers that answer a real TCI handshake are offered. A port that merely
+    accepts a connection is **not** a radio, and listing one would be worse than
+    listing nothing — other software in a busy shack sits on the same ports.
+
+- **Radios without TCI.** Icom, Yaesu, Kenwood and anything else
+  [Hamlib](https://hamlib.github.io/) drives can now be followed, through its
+  `rigctld` program. Choose it under **Settings → TCI → Follow radio via**; host,
+  port and nickname all follow the choice, so switching back to TCI finds its own
+  settings again.
+  - Hamlib reports the **radio's own model** ("IC-9700"), where TCI reports the
+    application name. So contacts made through a CAT radio are attributed correctly
+    with no nickname needed — the ambiguity that made nicknames necessary for TCI
+    simply does not arise.
+  - Frequency and mode arrive on the same path as TCI, so everything downstream —
+    band, dupe checking, logging — behaves identically whichever kind of radio is
+    attached.
+  - ⚠ **Hamlib is not included.** It is a separate project under a different licence,
+    and if you run WSJT-X or fldigi you very likely have it already. ShackLog finds
+    it automatically, says plainly when it cannot, and lets you point at it — see
+    *Following a non-TCI radio* in the README.
+  - ShackLog will **not** start `rigctld` for you. That program takes the serial port
+    exclusively, and a second copy fighting the first is a classic cause of CAT
+    dropping out mid-contest.
+
+### Fixed
+- **Switching logs did not reconnect the radio.** Radio settings live inside each log,
+  so opening a different log could leave the previous log's connection in place — or
+  none at all. Invisible while every log used the same TCI server; it stopped being
+  true the moment a log could choose a CAT radio instead.
+- The header kept the previous log's callsign after a switch.
+- The connection indicator said "TCI" even when following a radio over CAT, which sent
+  you to the wrong settings page to work out why a link was down. It now names
+  whichever link is actually in use.
+
 ## [0.5.0] - 2026-08-05
 
 ### Added
