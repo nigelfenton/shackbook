@@ -20,9 +20,11 @@ items live in the [CHANGELOG](CHANGELOG.md).
 - **Session Map** ([#3](https://github.com/nigelfenton/shacklog/issues/3)) —
   plot where *this evening's* contacts went, not the whole log: band-coloured
   points with great-circle lines, on the existing Grid Map engine. Answers "did
-  that new antenna change the footprint?". Needs a session definition first —
-  gap-based with a selectable window is the suggested default. Now that #2 has
-  shipped and the radio is recorded, a session map can distinguish rigs.
+  that new antenna change the footprint?". **Session definition decided: a gap
+  of more than 2 hours starts a new session** — keeps an evening that crosses
+  midnight UTC in one piece, which is what a plain date filter gets wrong for US
+  operators. #2 has shipped, so the radio is recorded per QSO and a session map
+  can distinguish rigs.
 - **Visual stats dashboard** — the awards data is computed today but only shown
   as a text report. A visual panel (worked/confirmed by band + mode + DXCC,
   a simple chart) would make it far more useful at a glance.
