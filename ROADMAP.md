@@ -44,7 +44,9 @@ items live in the [CHANGELOG](CHANGELOG.md).
   a per-contest layout, a live worked/needed county table, and a calendar of
   what is on now or coming up. `cnty`/`state` are already stored per QSO and
   `contest_id` is already indexed, so the table is a query over existing data;
-  the missing piece is a per-state county reference list. Shares the
+  the missing piece is a per-state county reference list
+  ([#5](https://github.com/nigelfenton/shacklog/issues/5)), without which the
+  table can only show *worked*, never *needed*. Shares the
   contest-definition structure the two items above also need — worth building
   that once for all four rather than three separate notions of "which contest".
 
