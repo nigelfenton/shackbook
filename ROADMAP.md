@@ -40,6 +40,13 @@ items live in the [CHANGELOG](CHANGELOG.md).
 - **Super Check Partial** — a `master.scp` callsign-hint dropdown during entry.
 - **Cabrillo validation** — sanity-check a log against the selected contest's
   rules before export.
+- **QSO party mode** ([#4](https://github.com/nigelfenton/shacklog/issues/4)) —
+  a per-contest layout, a live worked/needed county table, and a calendar of
+  what is on now or coming up. `cnty`/`state` are already stored per QSO and
+  `contest_id` is already indexed, so the table is a query over existing data;
+  the missing piece is a per-state county reference list. Shares the
+  contest-definition structure the two items above also need — worth building
+  that once for all four rather than three separate notions of "which contest".
 
 ## Multi-station / server
 
