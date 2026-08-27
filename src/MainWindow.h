@@ -41,6 +41,7 @@ class CallsignLookup;
 class SectionMapDialog;
 class GridMapDialog;
 class QsoPartyDialog;
+class SessionMapDialog;
 class AprsActivityDialog;
 struct SpotData;
 namespace Server { class WsjtxAdifReceiver; }
@@ -72,6 +73,7 @@ private slots:
     void onShowQsoParty();
     void onShowSectionMap();
     void onShowGridMap();
+    void onShowSessionMap();
     void onShowAprsActivity();
     void onHowFar();
     void onImportAdif();
@@ -173,6 +175,7 @@ private:
     QTimer*          m_lookupDebounce{nullptr};  // typed-call settle timer
     SectionMapDialog* m_sectionMap{nullptr};     // non-modal, lazily created
     GridMapDialog*    m_gridMap{nullptr};        // non-modal, lazily created
+    SessionMapDialog* m_sessionMap{nullptr};     // non-modal, lazily created
     AprsActivityDialog* m_aprsActivity{nullptr}; // non-modal, lazily created
     Qso     m_lookupFill;        // pending details for the next save…
     QString m_lookupFillCall;    // …valid only while the call field matches
