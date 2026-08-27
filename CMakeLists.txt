@@ -73,6 +73,9 @@ set(SHACKLOG_SOURCES
     src/CtyDat.h
     src/CallsignLookup.cpp
     src/CallsignLookup.h
+    # ── County reference list (worked/needed for state QSO parties) ──
+    src/CountyList.cpp
+    src/CountyList.h
     # ── APRS over AetherSDR's KISS-over-TCP TNC (activity + messaging) ──
     src/AprsDecode.cpp
     src/AprsDecode.h
@@ -83,6 +86,7 @@ set(SHACKLOG_SOURCES
     src/AprsActivityDialog.cpp
     src/AprsActivityDialog.h
     data/cty.qrc
+    data/counties.qrc
 )
 
 # Windows: link as a GUI app so no console window appears at launch.
@@ -237,6 +241,19 @@ if(SHACKLOG_TESTS)
     target_include_directories(aprs_decode_test PRIVATE src)
     target_link_libraries(aprs_decode_test PRIVATE Qt6::Core)
     add_test(NAME aprs_decode_test COMMAND aprs_decode_test)
+
+    add_executable(county_list_test
+        tests/county_list_test.cpp
+        src/CountyList.cpp
+        src/CountyList.h
+    )
+    target_include_directories(county_list_test PRIVATE src)
+    # The test reads the source-tree data file directly, so it does not need
+    # the app's .qrc linked in and fails loudly if the data file goes missing.
+    target_compile_definitions(county_list_test PRIVATE
+        SHACKLOG_COUNTIES_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/counties.dat")
+    target_link_libraries(county_list_test PRIVATE Qt6::Core)
+    add_test(NAME county_list_test COMMAND county_list_test)
 
     add_executable(tci_discovery_test
         tests/tci_discovery_test.cpp
