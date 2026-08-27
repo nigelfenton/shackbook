@@ -62,6 +62,17 @@ struct ContestDef {
     // Affects what "needed" means, so it is recorded rather than assumed.
     bool outOfStateWorksOutOfState{false};
 
+    // Has this exchange been checked against the sponsor's published rules?
+    //
+    // Carried per definition rather than as a note in the data file, because
+    // a caller needs to be able to ACT on it: a worked/needed table can use
+    // an unconfirmed definition happily (being wrong costs a mis-labelled
+    // column), while anything driving a submitted log should say so first.
+    // A definition that is present but wrong is worse than one that is
+    // absent, and this is what lets the difference be surfaced instead of
+    // assumed.
+    bool exchangeConfirmed{false};
+
     bool isValid() const { return !id.isEmpty(); }
     bool isCountyParty() const { return !countyState.isEmpty(); }
 };

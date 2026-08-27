@@ -72,9 +72,15 @@ int ContestCatalog::load(const QString& path)
         const QString line = in.readLine();
         if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) continue;
 
-        // ID|Name|Sent|Received|CountyState|OutOfStateWorksOutOfState
+        // ID|Name|Sent|Received|CountyState|OutOfState|Status
+        //
+        // The Status field is REQUIRED, not optional-with-a-default. A row
+        // that omits it is rejected rather than silently treated as
+        // confirmed or unconfirmed: whichever default were chosen would be
+        // a guess about the provenance of somebody else's edit, and the
+        // whole point of the column is that provenance is stated.
         const QStringList f6 = line.split(QLatin1Char('|'));
-        if (f6.size() != 6) continue;
+        if (f6.size() != 7) continue;
 
         ContestDef d;
         d.id   = f6[0].trimmed().toUpper();
@@ -92,6 +98,16 @@ int ContestCatalog::load(const QString& path)
 
         d.countyState = f6[4].trimmed().toUpper();
         d.outOfStateWorksOutOfState = (f6[5].trimmed() == QLatin1String("1"));
+
+        // Only the exact word CONFIRMED confirms. Anything else — including
+        // a typo, a blank, or a hopeful "probably" — leaves the definition
+        // unconfirmed, which is the safe direction to fail in.
+        const QString status = f6[6].trimmed().toUpper();
+        if (status != QLatin1String("CONFIRMED")
+            && status != QLatin1String("UNCONFIRMED"))
+            continue;                       // unrecognised status: reject the row
+        d.exchangeConfirmed = (status == QLatin1String("CONFIRMED"));
+
         m_defs.append(d);
     }
     return m_defs.size();

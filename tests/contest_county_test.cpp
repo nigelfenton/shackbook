@@ -15,6 +15,9 @@
 #include "CountyProgress.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
 #include <cstdio>
 
 using namespace ShackLog;
@@ -63,6 +66,46 @@ int main(int argc, char** argv)
     check(!cat.find("").isValid(), "an empty contest id yields an invalid def");
 
     check(!cat.countyParties().isEmpty(), "county parties can be listed");
+
+    // ── ⭐ Provenance: every bundled row states whether its exchange was
+    // checked against the sponsor's rules. A definition that is present but
+    // WRONG is worse than one that is absent, so this must be readable by a
+    // caller rather than living only in a comment.
+    check(!mdc.exchangeConfirmed,
+          "the bundled definitions are honestly marked UNCONFIRMED");
+    for (const ContestDef& d : cat.all())
+        if (d.exchangeConfirmed) {
+            check(false, "a row claims CONFIRMED — has its exchange really been checked?");
+            break;
+        }
+
+    // A row whose Status is missing or unrecognised is REJECTED, not
+    // defaulted. Whichever default were picked would be a guess about the
+    // provenance of somebody else's edit.
+    {
+        const QString tmp = QDir::tempPath() + QStringLiteral("/shacklog_contest_status_test.dat");
+        QFile f(tmp);
+        check(f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text),
+              "can write a temporary definitions file");
+        {
+            QTextStream out(&f);
+            out << "GOOD|Good Party|RST,COUNTY|RST,COUNTY|MD|0|UNCONFIRMED\n";
+            out << "SIXCOL|Missing Status|RST,COUNTY|RST,COUNTY|MD|0\n";
+            out << "BADSTAT|Bad Status|RST,COUNTY|RST,COUNTY|MD|0|PROBABLY\n";
+            out << "OKCONF|Confirmed Party|RST,COUNTY|RST,COUNTY|MD|0|CONFIRMED\n";
+        }
+        f.close();
+
+        ContestCatalog c2;
+        const int loaded = c2.load(tmp);
+        check(loaded == 2, "only the two rows with a valid Status load");
+        check(c2.find("GOOD").isValid(),    "an UNCONFIRMED row loads");
+        check(!c2.find("SIXCOL").isValid(), "a row MISSING the Status field is rejected");
+        check(!c2.find("BADSTAT").isValid(),"a row with an unrecognised Status is rejected");
+        check(c2.find("OKCONF").exchangeConfirmed,
+              "CONFIRMED is carried through to the definition");
+        QFile::remove(tmp);
+    }
     for (const ContestDef& d : cat.countyParties())
         if (!d.isCountyParty()) { check(false, "countyParties() returned a non-party"); break; }
 
