@@ -1,0 +1,41 @@
+# contests.dat - contest definitions for ShackLog (#4)
+#
+# What a contest IS: its exchange, and whether it is a county-based state
+# party. Enough to lay out an entry form, drive a worked/needed table, and
+# sanity-check a Cabrillo export. NOT a scoring model - multipliers and
+# points rules are deliberately out of scope, see src/ContestDef.h.
+#
+# Format, one record per line, pipe-separated:
+#   ID|Name|SentFields|ReceivedFields|CountyState|OutOfStateWorksOutOfState
+#
+# ID              Cabrillo CONTEST: value, uppercase; matches qsos.contest_id
+# SentFields      comma-separated, IN SENDING ORDER - this sets tab order
+# ReceivedFields  same, for what the other station sends
+# CountyState     two-letter state whose counties are the multiplier; empty
+#                 for contests that are not county-based
+# OutOfState...   1 when out-of-state stations also work each other, else 0
+#
+# Field names: RST, SERIAL, COUNTY, STATE, SECTION, GRID, NAME, POWER, AGE,
+#              TEXT
+#
+# ONLY contests whose exchange has been confirmed against the sponsor's own
+# rules belong here. The long tail is handled generically: an unknown
+# contest_id simply has no definition, and ShackLog falls back to its
+# everyday layout. A definition that is present but WRONG is worse than one
+# that is absent, because the entry form and the Cabrillo check would both
+# act on it.
+#
+# STATUS: the entries below are a STARTING SET whose exchange shape is the
+# common county-party form (RST + county, some with a serial). They have NOT
+# been checked line-by-line against each sponsor's current rules, and rules
+# do change between years. Confirm before relying on one for a submitted log,
+# and treat a mismatch as a bug in this file rather than in the code.
+#
+# Blank lines and lines beginning with # are ignored.
+#
+MDC-QSO-PARTY|Maryland-DC QSO Party|RST,COUNTY|RST,COUNTY|MD|0
+FLQP|Florida QSO Party|RST,COUNTY|RST,COUNTY|FL|0
+CQP|California QSO Party|RST,SERIAL,COUNTY|RST,SERIAL,COUNTY|CA|0
+PAQP|Pennsylvania QSO Party|RST,SERIAL,COUNTY|RST,SERIAL,COUNTY|PA|0
+OHQP|Ohio QSO Party|RST,COUNTY|RST,COUNTY|OH|0
+TXQP|Texas QSO Party|RST,COUNTY|RST,COUNTY|TX|0
