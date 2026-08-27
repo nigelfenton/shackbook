@@ -49,6 +49,12 @@ set(SHACKLOG_SOURCES
     src/SectionMapDialog.h
     src/LotwDialog.cpp
     src/LotwDialog.h
+    # ── Session Map: derived operating sessions + shared world geometry ──
+    src/QsoSession.cpp
+    src/QsoSession.h
+    src/WorldMap.h
+    src/SessionMapDialog.cpp
+    src/SessionMapDialog.h
     src/GridMapDialog.cpp
     src/GridMapDialog.h
     src/server/WsjtxAdifReceiver.cpp
@@ -292,6 +298,14 @@ if(SHACKLOG_TESTS)
         SHACKLOG_CALENDAR_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/calendar.dat")
     target_link_libraries(contest_calendar_test PRIVATE Qt6::Core)
     add_test(NAME contest_calendar_test COMMAND contest_calendar_test)
+    add_executable(qso_session_test
+        tests/qso_session_test.cpp
+        src/QsoSession.cpp
+        src/QsoSession.h
+    )
+    target_include_directories(qso_session_test PRIVATE src)
+    target_link_libraries(qso_session_test PRIVATE Qt6::Core)
+    add_test(NAME qso_session_test COMMAND qso_session_test)
 
     add_executable(tci_discovery_test
         tests/tci_discovery_test.cpp

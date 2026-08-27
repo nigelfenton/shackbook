@@ -16,6 +16,7 @@
 #include "CallsignLookup.h"
 #include "SectionMapDialog.h"
 #include "GridMapDialog.h"
+#include "SessionMapDialog.h"
 #include "LotwDialog.h"
 #include "AprsActivityDialog.h"
 #include "AetherSettingsReader.h"
@@ -383,6 +384,7 @@ void MainWindow::buildMenus()
                                           this, &MainWindow::onShowSectionMap);
     mapsMenu->addAction("&Grid Map (Maidenhead)…",
                         this, &MainWindow::onShowGridMap);
+    mapsMenu->addAction("Se&ssion Map…", this, &MainWindow::onShowSessionMap);
     m_actHowFarMap  = mapsMenu->addAction("&How far? (PSK Reporter)…",
                                           this, &MainWindow::onHowFar);
 
@@ -423,6 +425,23 @@ void MainWindow::onShowGridMap()
     m_gridMap->show();
     m_gridMap->raise();
     m_gridMap->activateWindow();
+}
+
+void MainWindow::onShowSessionMap()
+{
+    if (!m_model) return;
+    if (!m_sessionMap) {
+        m_sessionMap = new SessionMapDialog(m_model, this);
+        m_sessionMap->setAttribute(Qt::WA_DeleteOnClose);
+        connect(m_sessionMap, &QObject::destroyed, this,
+                [this]() { m_sessionMap = nullptr; });
+    }
+    // Re-derive on every open: sessions are computed from the log, so a QSO
+    // logged since the dialog was last shown belongs in the current session.
+    m_sessionMap->refresh();
+    m_sessionMap->show();
+    m_sessionMap->raise();
+    m_sessionMap->activateWindow();
 }
 
 void MainWindow::onShowAprsActivity()
