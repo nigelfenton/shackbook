@@ -40,6 +40,7 @@ class PotaClient;
 class CallsignLookup;
 class SectionMapDialog;
 class GridMapDialog;
+class QsoPartyDialog;
 class AprsActivityDialog;
 struct SpotData;
 namespace Server { class WsjtxAdifReceiver; }
@@ -68,6 +69,7 @@ private slots:
     void onSettings();
     void onSwitchLog();
     void onShowAwards();
+    void onShowQsoParty();
     void onShowSectionMap();
     void onShowGridMap();
     void onShowAprsActivity();

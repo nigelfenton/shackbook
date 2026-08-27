@@ -81,6 +81,8 @@ set(SHACKLOG_SOURCES
     src/ContestDef.h
     src/ContestCalendar.cpp
     src/ContestCalendar.h
+    src/QsoPartyDialog.cpp
+    src/QsoPartyDialog.h
     src/CountyProgress.cpp
     src/CountyProgress.h
     # ── APRS over AetherSDR's KISS-over-TCP TNC (activity + messaging) ──

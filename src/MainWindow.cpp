@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "AwardsDialog.h"
+#include "QsoPartyDialog.h"
 #include "LogbookModel.h"
 #include "TciClient.h"
 #include "RigctldClient.h"
@@ -366,6 +367,7 @@ void MainWindow::buildMenus()
     auto* toolsMenu = menuBar()->addMenu("&Tools");
     m_actSettings      = toolsMenu->addAction("&Settings…", this, &MainWindow::onSettings);
     m_actAwards        = toolsMenu->addAction("&Awards…", this, &MainWindow::onShowAwards);
+    toolsMenu->addAction("&QSO Party…", this, &MainWindow::onShowQsoParty);
     m_actLotw          = toolsMenu->addAction("&LoTW Upload…", this, &MainWindow::onShowLotw);
     toolsMenu->addSeparator();
     m_actFindRadios    = toolsMenu->addAction("&Find radios…",   this, &MainWindow::onFindRadios);
@@ -1196,6 +1198,15 @@ void MainWindow::onShowAwards()
     if (!m_model || !m_model->isOpen()) return;
     AwardsDialog dlg(m_model, m_operatorCall.isEmpty()
                                   ? m_model->myCall() : m_operatorCall, this);
+    dlg.exec();
+}
+
+void MainWindow::onShowQsoParty()
+{
+    if (!m_model || !m_model->isOpen()) return;
+    // Modal like Awards: it is a chase view consulted between QSOs, and a
+    // modeless one would need live refresh wiring for no clear gain yet.
+    QsoPartyDialog dlg(m_model, this);
     dlg.exec();
 }
 
