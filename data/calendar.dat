@@ -1,0 +1,46 @@
+# calendar.dat - when contests run (#4, item 3)
+#
+# RULES, NOT DATES. Contest schedules recur by rule - "the second full
+# weekend of August" - so that is what ships, and the dates are computed for
+# whatever year is asked about. A bundled list of 2026 dates would be
+# silently stale in 2027, and the box that most needs to know what is on is
+# often the one at a field site with no way to refresh it.
+#
+# Format, one record per line, pipe-separated:
+#   ContestId|Name|Rule|Month|Nth|DurationDays|FixedDay
+#
+# ContestId     joins to contests.dat; may be empty for an event we can date
+#               but have no exchange definition for
+# Name          human-readable
+# Rule          NTH_WEEKEND | LAST_WEEKEND | NTH_SATURDAY | FIXED
+# Month         1-12
+# Nth           1-5 for NTH_* rules; ignored by LAST_WEEKEND and FIXED
+# DurationDays  days the event covers - 2 for a weekend, 1 for a single day
+# FixedDay      day of month, FIXED only; 0 otherwise
+#
+# An unrecognised rule REJECTS the row rather than being approximated:
+# guessing at a recurrence would put the event in the wrong weekend and look
+# authoritative doing it.
+#
+# -- PROVENANCE ----------------------------------------------------------
+#
+# These recurrence rules are UNCONFIRMED, in the same sense as contests.dat:
+# they were written from general knowledge of when these parties run, not
+# from each sponsor's published schedule. Sponsors do move events between
+# years.
+#
+# The consequence is bounded and worth stating plainly: a wrong rule here
+# shows the operator the wrong weekend. That is annoying but visible - unlike
+# a wrong EXCHANGE, which would corrupt a submitted log - which is why this
+# file does not carry a machine-readable CONFIRMED column the way
+# contests.dat does. Treat every date below as a prompt to check, not as an
+# authority.
+#
+# Blank lines and lines beginning with # are ignored.
+#
+MDC-QSO-PARTY|Maryland-DC QSO Party|NTH_WEEKEND|8|2|2|0
+CQP|California QSO Party|NTH_WEEKEND|10|1|2|0
+PAQP|Pennsylvania QSO Party|NTH_WEEKEND|10|2|2|0
+OHQP|Ohio QSO Party|LAST_WEEKEND|8|0|1|0
+TXQP|Texas QSO Party|LAST_WEEKEND|9|0|2|0
+FLQP|Florida QSO Party|NTH_WEEKEND|4|4|2|0

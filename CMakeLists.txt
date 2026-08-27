@@ -76,6 +76,15 @@ set(SHACKLOG_SOURCES
     # ── County reference list (worked/needed for state QSO parties) ──
     src/CountyList.cpp
     src/CountyList.h
+    # ── Contest definitions + worked/needed counties (QSO party mode) ──
+    src/ContestDef.cpp
+    src/ContestDef.h
+    src/ContestCalendar.cpp
+    src/ContestCalendar.h
+    src/QsoPartyDialog.cpp
+    src/QsoPartyDialog.h
+    src/CountyProgress.cpp
+    src/CountyProgress.h
     # ── APRS over AetherSDR's KISS-over-TCP TNC (activity + messaging) ──
     src/AprsDecode.cpp
     src/AprsDecode.h
@@ -87,6 +96,8 @@ set(SHACKLOG_SOURCES
     src/AprsActivityDialog.h
     data/cty.qrc
     data/counties.qrc
+    data/contests.qrc
+    data/calendar.qrc
 )
 
 # Windows: link as a GUI app so no console window appears at launch.
@@ -254,6 +265,33 @@ if(SHACKLOG_TESTS)
         SHACKLOG_COUNTIES_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/counties.dat")
     target_link_libraries(county_list_test PRIVATE Qt6::Core)
     add_test(NAME county_list_test COMMAND county_list_test)
+
+    add_executable(contest_county_test
+        tests/contest_county_test.cpp
+        src/ContestDef.cpp
+        src/ContestDef.h
+        src/CountyList.cpp
+        src/CountyList.h
+        src/CountyProgress.cpp
+        src/CountyProgress.h
+    )
+    target_include_directories(contest_county_test PRIVATE src)
+    target_compile_definitions(contest_county_test PRIVATE
+        SHACKLOG_COUNTIES_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/counties.dat"
+        SHACKLOG_CONTESTS_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/contests.dat")
+    target_link_libraries(contest_county_test PRIVATE Qt6::Core)
+    add_test(NAME contest_county_test COMMAND contest_county_test)
+
+    add_executable(contest_calendar_test
+        tests/contest_calendar_test.cpp
+        src/ContestCalendar.cpp
+        src/ContestCalendar.h
+    )
+    target_include_directories(contest_calendar_test PRIVATE src)
+    target_compile_definitions(contest_calendar_test PRIVATE
+        SHACKLOG_CALENDAR_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/calendar.dat")
+    target_link_libraries(contest_calendar_test PRIVATE Qt6::Core)
+    add_test(NAME contest_calendar_test COMMAND contest_calendar_test)
 
     add_executable(tci_discovery_test
         tests/tci_discovery_test.cpp
