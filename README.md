@@ -13,6 +13,9 @@ It also ships an optional headless **server** for multi-station operating —
 mirroring an N3FJP network, ingesting WSJT-X spots, and serving a live
 Field Day score over HTTP.
 
+<img width="600" height="368" alt="Screenshot 2026-08-27 175440" src="https://github.com/user-attachments/assets/b5a12468-59b6-4644-917f-084d97329b53" />
+
+
 ## Download
 
 Pre-built binaries — including a Windows installer — are on the
