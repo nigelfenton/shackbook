@@ -3,7 +3,7 @@
 #include <QtGlobal>
 #include <cmath>
 
-namespace ShackLog {
+namespace ShackBook {
 namespace Aprs {
 
 namespace {
@@ -288,4 +288,4 @@ QByteArray buildMessageInfo(const QString& addressee, const QString& text,
 }
 
 } // namespace Aprs
-} // namespace ShackLog
+} // namespace ShackBook

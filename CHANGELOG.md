@@ -1,10 +1,29 @@
 # Changelog
 
-All notable changes to ShackLog are recorded here. The format follows
+All notable changes to ShackBook are recorded here. Entries before the
+rename below refer to the project under its former name, ShackLog, and
+are left unedited as the historical record. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [semantic versioning](https://semver.org/). Releases are cut by pushing a
 `vX.Y.Z` tag; CI then builds the Windows installer + zip, Linux AppImage, and
 macOS DMG and attaches them to the GitHub release.
+
+## [Unreleased]
+
+### Changed
+- **Renamed from ShackLog to ShackBook.** A UK amateur radio logging program
+  has used the name ShackLog since at least 2005, holds `shacklog.co.uk` and
+  `shacklog.com`, and is listed on DXZone. Continuing under that name would
+  have been confusing for operators and unfair to the people who had it
+  first, so this project moved rather than compete for the name.
+- **Your logbooks move with you.** On first run, an existing
+  `…/G0JKN/ShackLog/` data directory is **copied** — not moved — to
+  `…/G0JKN/ShackBook/`, and the app tells you it has done so. The originals
+  are left untouched; delete them by hand once you are satisfied. If you have
+  already started logging under the new name, nothing is overwritten.
+- ADIF exports now carry `PROGRAMID: ShackBook` and Cabrillo exports
+  `CREATED-BY: ShackBook`. Logs exported before the rename keep the old name,
+  which is correct — that is what produced them.
 
 ## [0.6.0] - 2026-08-05
 

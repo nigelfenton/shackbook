@@ -13,7 +13,7 @@
 #include <QTabWidget>
 #include <QMessageBox>
 
-namespace ShackLog {
+namespace ShackBook {
 
 namespace {
 const QStringList kQslStates = { "", "Y", "N", "R", "I" };
@@ -243,4 +243,4 @@ void EditDialog::onAccept()
     accept();
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

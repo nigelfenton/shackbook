@@ -14,7 +14,7 @@
 
 #include <cstdio>
 
-using namespace ShackLog;
+using namespace ShackBook;
 
 namespace {
 
@@ -54,12 +54,12 @@ void corrupt(const QString& path)
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    QTemporaryDir root("shacklog-durability-XXXXXX");
+    QTemporaryDir root("shackbook-durability-XXXXXX");
     if (!root.isValid()) { std::printf("FAIL temp dir\n"); return 1; }
     const QString dir = root.path();
 
     // ── 1. fresh log, manual verified backup ─────────────────────────────
-    const QString logPath = dir + "/shacklog-TEST.sqlite";
+    const QString logPath = dir + "/shackbook-TEST.sqlite";
     {
         LogbookModel m;
         check(m.open(logPath), "fresh log opens");
@@ -71,7 +71,7 @@ int main(int argc, char** argv)
               "manual backup written and verified");
         // Weekly auto backup fired on open (fresh log = no last-backup stamp).
         const QStringList autos = QDir(dir + "/backups")
-                                      .entryList({"shacklog-TEST-*-auto.sqlite"});
+                                      .entryList({"shackbook-TEST-*-auto.sqlite"});
         if (autos.size() != 1) {
             std::printf("      [debug] backups dir: %s\n",
                         qPrintable(QDir(dir + "/backups")
@@ -88,7 +88,7 @@ int main(int argc, char** argv)
         LogbookModel m;
         m.open(logPath);
         const QStringList autos = QDir(dir + "/backups")
-                                      .entryList({"shacklog-TEST-*-auto.sqlite"});
+                                      .entryList({"shackbook-TEST-*-auto.sqlite"});
         check(autos.size() == 1, "no duplicate auto backup within a week");
         m.close();
     }
@@ -111,7 +111,7 @@ int main(int argc, char** argv)
     }
 
     // ── 4. corruption with NO backup: damaged-continue, fail loud ────────
-    const QString lonePath = dir + "/shacklog-LONE.sqlite";
+    const QString lonePath = dir + "/shackbook-LONE.sqlite";
     {
         LogbookModel m;
         m.open(lonePath);
@@ -121,7 +121,7 @@ int main(int argc, char** argv)
     }
     // Remove every backup of it (the auto one fired on open).
     for (const QString& f : QDir(dir + "/backups")
-                                .entryList({"shacklog-LONE-*.sqlite"}))
+                                .entryList({"shackbook-LONE-*.sqlite"}))
         QFile::remove(dir + "/backups/" + f);
     corrupt(lonePath);
     {
@@ -137,12 +137,12 @@ int main(int argc, char** argv)
     const QString fixture =
         argc > 1 ? QString::fromLocal8Bit(argv[1]) : QString();
     if (!fixture.isEmpty() && QFile::exists(fixture)) {
-        const QString v2Path = dir + "/shacklog-V2FIX.sqlite";
+        const QString v2Path = dir + "/shackbook-V2FIX.sqlite";
         QFile::copy(fixture, v2Path);
         LogbookModel m;
         check(m.open(v2Path), "real v2 logbook opens and migrates");
         const QStringList pre = QDir(dir + "/backups")
-                                    .entryList({"shacklog-V2FIX-*-premigration-v2.sqlite"});
+                                    .entryList({"shackbook-V2FIX-*-premigration-v2.sqlite"});
         check(pre.size() == 1, "pre-migration backup written before the v3 bump");
         check(m.queryQsos().size() > 0, "migrated log still holds its QSOs");
         m.close();

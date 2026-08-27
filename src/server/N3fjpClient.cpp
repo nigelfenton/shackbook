@@ -50,7 +50,7 @@ QString normaliseBand(const QString& in)
 
 } // namespace
 
-namespace ShackLog::Server {
+namespace ShackBook::Server {
 
 N3fjpClient::N3fjpClient(LogbookModel* model, QObject* parent)
     : QObject(parent)
@@ -208,4 +208,4 @@ void N3fjpClient::handleEnterEvent(const QString& inner)
     emit qsoMirrored(q.id, q.call);
 }
 
-} // namespace ShackLog::Server
+} // namespace ShackBook::Server

@@ -18,7 +18,7 @@
 //
 // Sources: the AX.25 v2.2 spec and the APRS Protocol Reference (APRS101.PDF).
 // Clean-room — AetherSDR's GPL decoder was a correctness reference only, not
-// copied; this stays MIT with the rest of ShackLog.
+// copied; this stays MIT with the rest of ShackBook.
 
 #include <QByteArray>
 #include <QString>
@@ -26,7 +26,7 @@
 #include <QVector>
 #include <optional>
 
-namespace ShackLog {
+namespace ShackBook {
 namespace Aprs {
 
 // One decoded AX.25 UI frame, APRS-interpreted where possible.
@@ -84,4 +84,4 @@ QByteArray buildMessageInfo(const QString& addressee, const QString& text,
                             const QString& msgNo = QString());
 
 } // namespace Aprs
-} // namespace ShackLog
+} // namespace ShackBook

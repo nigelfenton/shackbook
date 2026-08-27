@@ -18,7 +18,7 @@
 
 class QLabel;
 
-namespace ShackLog {
+namespace ShackBook {
 
 class LogbookModel;
 
@@ -37,4 +37,4 @@ private:
     QHash<QString, QLabel*> m_tiles;     // section abbrev → tile
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

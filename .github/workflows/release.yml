@@ -1,4 +1,4 @@
-# ShackLog release workflow.
+# ShackBook release workflow.
 #
 # Trigger:
 #   git tag v0.1.0
@@ -9,9 +9,9 @@
 # tab are also supported (workflow_dispatch).
 #
 # Artifacts produced:
-#   ShackLog-<tag>-windows-x64.zip      — extract, run ShackLog.exe
-#   ShackLog-<tag>-linux-x86_64.AppImage — chmod +x, run directly
-#   ShackLog-<tag>-macos-arm64.dmg      — Apple Silicon only for v0.1
+#   ShackBook-<tag>-windows-x64.zip      — extract, run ShackBook.exe
+#   ShackBook-<tag>-linux-x86_64.AppImage — chmod +x, run directly
+#   ShackBook-<tag>-macos-arm64.dmg      — Apple Silicon only for v0.1
 
 name: Release
 
@@ -51,7 +51,7 @@ jobs:
           arch: x64
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKLOG_RELEASE=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKBOOK_RELEASE=ON
 
       - name: Build
         run: cmake --build build
@@ -63,11 +63,11 @@ jobs:
           if ([string]::IsNullOrEmpty($version) -or -not $version.StartsWith("v")) {
               $version = "dev-$($env:GITHUB_SHA.Substring(0,7))"
           }
-          $stage = "ShackLog-$version-windows-x64"
+          $stage = "ShackBook-$version-windows-x64"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
           # Top-level runtime files: exe + DLLs deployed by windeployqt.
-          Copy-Item build\ShackLog.exe $stage\
+          Copy-Item build\ShackBook.exe $stage\
           Get-ChildItem build\*.dll | Copy-Item -Destination $stage\
           if (Test-Path build\vc_redist.x64.exe) {
               Copy-Item build\vc_redist.x64.exe $stage\
@@ -89,7 +89,7 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: windows-zip
-          path: ShackLog-*-windows-x64.zip
+          path: ShackBook-*-windows-x64.zip
           if-no-files-found: error
 
       - name: Build Inno Setup installer
@@ -99,7 +99,7 @@ jobs:
           if ([string]::IsNullOrEmpty($version) -or -not $version.StartsWith("v")) {
               $version = "dev-$($env:GITHUB_SHA.Substring(0,7))"
           }
-          $stage = "ShackLog-$version-windows-x64"
+          $stage = "ShackBook-$version-windows-x64"
 
           # Inno Setup 6 ships preinstalled on windows-2022 GitHub runners;
           # if a future image drops it, fall back to chocolatey.
@@ -111,22 +111,22 @@ jobs:
               throw "ISCC.exe not found at $iscc — Inno Setup install failed"
           }
 
-          # ISCC reads SHACKLOG_VERSION + SHACKLOG_STAGING via GetEnv() in
+          # ISCC reads SHACKBOOK_VERSION + SHACKBOOK_STAGING via GetEnv() in
           # the .iss script.  /O. forces the output to the working
           # directory regardless of where the .iss file lives, otherwise
           # the OutputDir directive in the script is interpreted relative
           # to the .iss path (i.e. installer\installer-output\).
-          $env:SHACKLOG_VERSION = $version.TrimStart("v")
-          $env:SHACKLOG_STAGING = (Resolve-Path $stage).Path
-          & $iscc /O. installer\shacklog.iss
+          $env:SHACKBOOK_VERSION = $version.TrimStart("v")
+          $env:SHACKBOOK_STAGING = (Resolve-Path $stage).Path
+          & $iscc /O. installer\shackbook.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit $LASTEXITCODE" }
 
-          Get-ChildItem ShackLog-Setup-*.exe
+          Get-ChildItem ShackBook-Setup-*.exe
 
       - uses: actions/upload-artifact@v5
         with:
           name: windows-installer
-          path: ShackLog-Setup-*-windows-x64.exe
+          path: ShackBook-Setup-*-windows-x64.exe
           if-no-files-found: error
 
   # ── Linux (AppImage) ────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ jobs:
           cache: true
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKLOG_RELEASE=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKBOOK_RELEASE=ON
 
       - name: Build
         run: cmake --build build
@@ -187,15 +187,15 @@ jobs:
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/share/applications
           mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          cp build/ShackLog AppDir/usr/bin/
+          cp build/ShackBook AppDir/usr/bin/
 
-          cat > AppDir/usr/share/applications/shacklog.desktop <<'EOF'
+          cat > AppDir/usr/share/applications/shackbook.desktop <<'EOF'
           [Desktop Entry]
           Type=Application
-          Name=ShackLog
+          Name=ShackBook
           GenericName=Ham Radio Logbook
-          Exec=ShackLog
-          Icon=shacklog
+          Exec=ShackBook
+          Icon=shackbook
           Comment=Standalone ham radio logbook with TCI integration
           Categories=HamRadio;Network;
           Terminal=false
@@ -206,7 +206,7 @@ jobs:
           # runners) so the PNG is unambiguously valid; embedding base64
           # of a 1×1 PNG turns out to upset linuxdeploy's CImg validator.
           convert -size 256x256 xc:'#0a1320' \
-              AppDir/usr/share/icons/hicolor/256x256/apps/shacklog.png
+              AppDir/usr/share/icons/hicolor/256x256/apps/shackbook.png
 
       - name: Build AppImage
         run: |
@@ -222,17 +222,17 @@ jobs:
               --appdir AppDir \
               --plugin qt \
               --output appimage \
-              --desktop-file AppDir/usr/share/applications/shacklog.desktop \
-              --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/shacklog.png
+              --desktop-file AppDir/usr/share/applications/shackbook.desktop \
+              --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/shackbook.png
 
           version="${GITHUB_REF_NAME:-dev-${GITHUB_SHA:0:7}}"
-          mv ShackLog*.AppImage "ShackLog-${version}-linux-x86_64.AppImage"
-          ls -lh ShackLog-*.AppImage
+          mv ShackBook*.AppImage "ShackBook-${version}-linux-x86_64.AppImage"
+          ls -lh ShackBook-*.AppImage
 
       - uses: actions/upload-artifact@v5
         with:
           name: linux
-          path: ShackLog-*-linux-x86_64.AppImage
+          path: ShackBook-*-linux-x86_64.AppImage
           if-no-files-found: error
 
   # ── macOS (Apple Silicon) ───────────────────────────────────────────────
@@ -259,7 +259,7 @@ jobs:
         run: brew install ninja
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKLOG_RELEASE=ON
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKBOOK_RELEASE=ON
 
       - name: Build
         run: cmake --build build
@@ -267,17 +267,17 @@ jobs:
       - name: macdeployqt + DMG
         run: |
           # Bundle Qt frameworks into the .app
-          "$QT_ROOT_DIR/bin/macdeployqt" build/ShackLog.app
+          "$QT_ROOT_DIR/bin/macdeployqt" build/ShackBook.app
 
           version="${GITHUB_REF_NAME:-dev-${GITHUB_SHA:0:7}}"
-          dmg_name="ShackLog-${version}-macos-arm64.dmg"
+          dmg_name="ShackBook-${version}-macos-arm64.dmg"
 
           # Stage with README/LICENSE alongside the .app
           mkdir -p dmg-stage
-          cp -R build/ShackLog.app dmg-stage/
+          cp -R build/ShackBook.app dmg-stage/
           cp README.md LICENSE dmg-stage/
 
-          hdiutil create -volname "ShackLog" \
+          hdiutil create -volname "ShackBook" \
               -srcfolder dmg-stage \
               -ov -format UDZO \
               "$dmg_name"
@@ -286,7 +286,7 @@ jobs:
       - uses: actions/upload-artifact@v5
         with:
           name: macos
-          path: ShackLog-*-macos-arm64.dmg
+          path: ShackBook-*-macos-arm64.dmg
           if-no-files-found: error
 
   # ── Publish GitHub Release ──────────────────────────────────────────────
@@ -309,7 +309,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          name: ShackLog ${{ github.ref_name }}
+          name: ShackBook ${{ github.ref_name }}
           draft: false
           prerelease: false
           generate_release_notes: true

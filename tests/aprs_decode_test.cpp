@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstdio>
 
-using namespace ShackLog::Aprs;
+using namespace ShackBook::Aprs;
 
 namespace {
 

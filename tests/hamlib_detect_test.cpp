@@ -1,6 +1,6 @@
 // Finding Hamlib's rigctld — and being honest when it is not there.
 //
-// ShackLog requires Hamlib but does not ship it, which is only a defensible
+// ShackBook requires Hamlib but does not ship it, which is only a defensible
 // decision if the missing case is handled properly. The person without Hamlib
 // is exactly the person least able to work out why nothing happens: "not
 // installed", "radio switched off", "wrong port" and "firewall" all end as
@@ -21,7 +21,7 @@
 
 #include <cstdio>
 
-using namespace ShackLog;
+using namespace ShackBook;
 
 namespace {
 

@@ -10,7 +10,7 @@
 #include <QHostAddress>
 #include <QString>
 
-namespace ShackLog::Server {
+namespace ShackBook::Server {
 
 
 
@@ -114,4 +114,4 @@ void WsjtxAdifReceiver::onReadyRead()
     }
 }
 
-} // namespace ShackLog::Server
+} // namespace ShackBook::Server

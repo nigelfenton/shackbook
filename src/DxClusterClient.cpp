@@ -5,7 +5,7 @@
 #include <QTcpSocket>
 #include <QTimer>
 
-namespace ShackLog {
+namespace ShackBook {
 
 namespace {
 constexpr int kBackoff[] = { 1, 2, 5, 10, 30 };
@@ -254,4 +254,4 @@ void DxClusterClient::setConnected(bool c)
     emit connectionChanged(c);
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

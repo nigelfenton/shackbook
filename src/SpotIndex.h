@@ -24,7 +24,7 @@
 #include <QVector>
 #include <optional>
 
-namespace ShackLog {
+namespace ShackBook {
 
 class SpotIndex : public QObject {
     Q_OBJECT
@@ -69,4 +69,4 @@ private:
     QHash<qint64, QString>    m_byBucket;
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

@@ -9,7 +9,7 @@
 #include <QNetworkRequest>
 #include <QTimer>
 
-namespace ShackLog {
+namespace ShackBook {
 
 PotaClient::PotaClient(QObject* parent)
     : QObject(parent),
@@ -48,7 +48,7 @@ void PotaClient::poll()
 
     QNetworkRequest req(m_url);
     req.setHeader(QNetworkRequest::UserAgentHeader,
-                  QStringLiteral("ShackLog/0.2 (+https://github.com/nigelfenton/shacklog)"));
+                  QStringLiteral("ShackBook/0.2 (+https://github.com/nigelfenton/shackbook)"));
     req.setRawHeader("Accept", "application/json");
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                      QNetworkRequest::NoLessSafeRedirectPolicy);
@@ -124,4 +124,4 @@ void PotaClient::onReplyFinished()
     emit pollCompleted(count, QString{});
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

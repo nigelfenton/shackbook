@@ -2,7 +2,7 @@
 
 // N3FJP-protocol CLIENT — connects OUT to a remote N3FJP server (e.g. an
 // N3FJP Field Day Contest Log on a club logging laptop) and MIRRORS its QSOs
-// into the ShackLog logbook as they are entered.
+// into the ShackBook logbook as they are entered.
 //
 // This is the inverse of N3fjpServer (which listens).  On connect it sends
 //   <CMD><SETUPDATESTATE><VALUE>TRUE</VALUE></CMD>
@@ -27,11 +27,11 @@
 class QTcpSocket;
 class QTimer;
 
-namespace ShackLog {
+namespace ShackBook {
 class LogbookModel;
 }
 
-namespace ShackLog::Server {
+namespace ShackBook::Server {
 
 class N3fjpClient : public QObject {
     Q_OBJECT
@@ -72,4 +72,4 @@ private:
     int           m_mirrored{0};
 };
 
-} // namespace ShackLog::Server
+} // namespace ShackBook::Server

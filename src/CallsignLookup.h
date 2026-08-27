@@ -21,7 +21,7 @@
 class QNetworkAccessManager;
 class QNetworkReply;
 
-namespace ShackLog {
+namespace ShackBook {
 
 class CallsignLookup : public QObject {
     Q_OBJECT
@@ -55,7 +55,7 @@ public:
     void lookup(const QString& call, bool isUsCall);
 
 signals:
-    void result(const ShackLog::CallsignLookup::Result& r);
+    void result(const ShackBook::CallsignLookup::Result& r);
 
 private:
     void qrzLogin(const QString& pendingCall);
@@ -73,4 +73,4 @@ private:
     QString  m_hamqthSession;
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

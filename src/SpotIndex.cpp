@@ -3,7 +3,7 @@
 #include <QDateTime>
 #include <cmath>
 
-namespace ShackLog {
+namespace ShackBook {
 
 SpotIndex::SpotIndex(QObject* parent) : QObject(parent) {}
 
@@ -147,4 +147,4 @@ QVector<SpotData> SpotIndex::snapshot() const
     return out;
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

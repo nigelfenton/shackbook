@@ -24,7 +24,7 @@
 #include <QVariantList>
 #include <QVector>
 
-namespace ShackLog {
+namespace ShackBook {
 
 // Query filter for queryQsos / countQsos / export.  Lives at namespace
 // scope rather than nested inside LogbookModel because GCC and Clang
@@ -50,7 +50,7 @@ public:
     ~LogbookModel() override;
 
     // Open or create the logbook database.  If `path` is empty, defaults to
-    //   <AppLocalDataLocation>/shacklog.sqlite
+    //   <AppLocalDataLocation>/shackbook.sqlite
     bool open(const QString& path = {});
     // Close the database and release the connection so open() can be called
     // again on a different file (multi-log operator switching).
@@ -190,4 +190,4 @@ private:
     QString      m_connectionName;
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

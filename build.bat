@@ -1,5 +1,5 @@
 @echo off
-REM ShackLog build script — one-shot for Nigel's Windows dev box.
+REM ShackBook build script — one-shot for Nigel's Windows dev box.
 REM Configures (if needed) then builds.  Equivalent to:
 REM   cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="C:/Qt/6.10.3/msvc2022_64"
 REM   cmake --build build

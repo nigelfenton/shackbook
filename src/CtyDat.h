@@ -11,7 +11,7 @@
 #include <QHash>
 #include <QString>
 
-namespace ShackLog {
+namespace ShackBook {
 
 class CtyDat {
 public:
@@ -45,4 +45,4 @@ private:
     QHash<QString, Ref> m_prefixes;  // ordinary prefixes
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

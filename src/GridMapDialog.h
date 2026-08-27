@@ -21,7 +21,7 @@
 class QComboBox;
 class QLabel;
 
-namespace ShackLog {
+namespace ShackBook {
 
 class LogbookModel;
 
@@ -82,4 +82,4 @@ private:
     QLabel* m_statsLabel{};
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

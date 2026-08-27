@@ -1,57 +1,57 @@
-# contests.dat - contest definitions for ShackLog (#4)
-#
-# What a contest IS: its exchange, and whether it is a county-based state
-# party. Enough to lay out an entry form, drive a worked/needed table, and
-# sanity-check a Cabrillo export. NOT a scoring model - multipliers and
-# points rules are deliberately out of scope, see src/ContestDef.h.
-#
-# Format, one record per line, pipe-separated:
-#   ID|Name|SentFields|ReceivedFields|CountyState|OutOfState|Status
-#
-# ID              Cabrillo CONTEST: value, uppercase; matches qsos.contest_id
-# SentFields      comma-separated, IN SENDING ORDER - this sets tab order
-# ReceivedFields  same, for what the other station sends
-# CountyState     two-letter state whose counties are the multiplier; empty
-#                 for contests that are not county-based
-# OutOfState      1 when out-of-state stations also work each other, else 0
-# Status          CONFIRMED or UNCONFIRMED - see below. Required.
-#
-# Field names: RST, SERIAL, COUNTY, STATE, SECTION, GRID, NAME, POWER, AGE,
-#              TEXT
-#
-# -- THE STATUS COLUMN, and why it is per-row -----------------------------
-#
-# A definition that is present but WRONG is worse than one that is absent,
-# because the entry form and the Cabrillo check would both act on it. So
-# every row states its own provenance, rather than relying on a note at the
-# top of the file that whoever edits one row will never read.
-#
-#   CONFIRMED    the exchange has been checked against the sponsor's own
-#                published rules, with the year checked in a comment above
-#                the row. Safe to drive a submitted log.
-#
-#   UNCONFIRMED  the exchange is the COMMON county-party shape (RST +
-#                county, some with a serial) and is probably right, but
-#                nobody has read the sponsor's rules to verify it. Usable
-#                for a worked/needed table, where being wrong costs a
-#                mis-labelled column. NOT to be trusted for a submitted log
-#                until someone confirms it.
-#
-# EVERY ROW BELOW IS CURRENTLY UNCONFIRMED. That is honest rather than lazy:
-# these shapes were written from general knowledge of how state parties
-# work, not from the rules. Rules also change between years, which is why
-# even a CONFIRMED row has to carry the year it was confirmed.
-#
-# To confirm a row: read the sponsor's current rules, correct the exchange
-# if needed, change UNCONFIRMED to CONFIRMED, and add a comment above it
-# naming the source and year. Treat any mismatch found in use as a bug in
-# THIS FILE, not in the code that reads it.
-#
-# Blank lines and lines beginning with # are ignored.
-#
-MDC-QSO-PARTY|Maryland-DC QSO Party|RST,COUNTY|RST,COUNTY|MD|0|UNCONFIRMED
-FLQP|Florida QSO Party|RST,COUNTY|RST,COUNTY|FL|0|UNCONFIRMED
-CQP|California QSO Party|RST,SERIAL,COUNTY|RST,SERIAL,COUNTY|CA|0|UNCONFIRMED
-PAQP|Pennsylvania QSO Party|RST,SERIAL,COUNTY|RST,SERIAL,COUNTY|PA|0|UNCONFIRMED
-OHQP|Ohio QSO Party|RST,COUNTY|RST,COUNTY|OH|0|UNCONFIRMED
-TXQP|Texas QSO Party|RST,COUNTY|RST,COUNTY|TX|0|UNCONFIRMED
+# contests.dat - contest definitions for ShackBook (#4)
+#
+# What a contest IS: its exchange, and whether it is a county-based state
+# party. Enough to lay out an entry form, drive a worked/needed table, and
+# sanity-check a Cabrillo export. NOT a scoring model - multipliers and
+# points rules are deliberately out of scope, see src/ContestDef.h.
+#
+# Format, one record per line, pipe-separated:
+#   ID|Name|SentFields|ReceivedFields|CountyState|OutOfState|Status
+#
+# ID              Cabrillo CONTEST: value, uppercase; matches qsos.contest_id
+# SentFields      comma-separated, IN SENDING ORDER - this sets tab order
+# ReceivedFields  same, for what the other station sends
+# CountyState     two-letter state whose counties are the multiplier; empty
+#                 for contests that are not county-based
+# OutOfState      1 when out-of-state stations also work each other, else 0
+# Status          CONFIRMED or UNCONFIRMED - see below. Required.
+#
+# Field names: RST, SERIAL, COUNTY, STATE, SECTION, GRID, NAME, POWER, AGE,
+#              TEXT
+#
+# -- THE STATUS COLUMN, and why it is per-row -----------------------------
+#
+# A definition that is present but WRONG is worse than one that is absent,
+# because the entry form and the Cabrillo check would both act on it. So
+# every row states its own provenance, rather than relying on a note at the
+# top of the file that whoever edits one row will never read.
+#
+#   CONFIRMED    the exchange has been checked against the sponsor's own
+#                published rules, with the year checked in a comment above
+#                the row. Safe to drive a submitted log.
+#
+#   UNCONFIRMED  the exchange is the COMMON county-party shape (RST +
+#                county, some with a serial) and is probably right, but
+#                nobody has read the sponsor's rules to verify it. Usable
+#                for a worked/needed table, where being wrong costs a
+#                mis-labelled column. NOT to be trusted for a submitted log
+#                until someone confirms it.
+#
+# EVERY ROW BELOW IS CURRENTLY UNCONFIRMED. That is honest rather than lazy:
+# these shapes were written from general knowledge of how state parties
+# work, not from the rules. Rules also change between years, which is why
+# even a CONFIRMED row has to carry the year it was confirmed.
+#
+# To confirm a row: read the sponsor's current rules, correct the exchange
+# if needed, change UNCONFIRMED to CONFIRMED, and add a comment above it
+# naming the source and year. Treat any mismatch found in use as a bug in
+# THIS FILE, not in the code that reads it.
+#
+# Blank lines and lines beginning with # are ignored.
+#
+MDC-QSO-PARTY|Maryland-DC QSO Party|RST,COUNTY|RST,COUNTY|MD|0|UNCONFIRMED
+FLQP|Florida QSO Party|RST,COUNTY|RST,COUNTY|FL|0|UNCONFIRMED
+CQP|California QSO Party|RST,SERIAL,COUNTY|RST,SERIAL,COUNTY|CA|0|UNCONFIRMED
+PAQP|Pennsylvania QSO Party|RST,SERIAL,COUNTY|RST,SERIAL,COUNTY|PA|0|UNCONFIRMED
+OHQP|Ohio QSO Party|RST,COUNTY|RST,COUNTY|OH|0|UNCONFIRMED
+TXQP|Texas QSO Party|RST,COUNTY|RST,COUNTY|TX|0|UNCONFIRMED

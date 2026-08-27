@@ -22,7 +22,7 @@
 #include <QDialogButtonBox>
 #include <QTabWidget>
 
-namespace ShackLog {
+namespace ShackBook {
 
 namespace {
 const QStringList kContestIds = {
@@ -52,7 +52,7 @@ const QStringList kCatTx      = { "ONE", "TWO", "LIMITED", "UNLIMITED", "SWL" };
 SettingsDialog::SettingsDialog(LogbookModel* model, QWidget* parent)
     : QDialog(parent), m_model(model)
 {
-    setWindowTitle("ShackLog Settings");
+    setWindowTitle("ShackBook Settings");
     setMinimumWidth(560);
     buildUI();
     populate();
@@ -99,14 +99,14 @@ void SettingsDialog::buildUI()
     m_radioSource->addItem("TCI — AetherSDR, ExpertSDR, SunSDR", "tci");
     m_radioSource->addItem("Hamlib rigctld — Icom, Yaesu, Kenwood, others", "rigctld");
     m_radioSource->setToolTip(
-        "How ShackLog follows your radio.\n\n"
+        "How ShackBook follows your radio.\n\n"
         "TCI is built into AetherSDR and ExpertSDR — nothing else to install.\n\n"
         "rigctld covers everything else, but needs Hamlib installed and running "
-        "(ShackLog does not include it). Its advantage: it reports the RADIO's "
+        "(ShackBook does not include it). Its advantage: it reports the RADIO's "
         "model, so contacts are attributed correctly without a nickname.");
     tciL->addRow("Follow radio via", m_radioSource);
 
-    // ShackLog does not ship Hamlib, so say plainly whether it is here. Without
+    // ShackBook does not ship Hamlib, so say plainly whether it is here. Without
     // this the operator gets "CAT: ✗" and no way to tell "not installed" from
     // "radio switched off" — different problems with different fixes.
     m_hamlibStatus = new QLabel;
@@ -118,7 +118,7 @@ void SettingsDialog::buildUI()
     m_rigctldPath = new QLineEdit;
     m_rigctldPath->setPlaceholderText("auto-detect");
     m_rigctldPath->setToolTip(
-        "Where rigctld lives, if ShackLog cannot find it on its own.\n\n"
+        "Where rigctld lives, if ShackBook cannot find it on its own.\n\n"
         "Leave blank to look in the usual places and on PATH.");
     tciL->addRow("rigctld program", m_rigctldPath);
 
@@ -425,10 +425,10 @@ void SettingsDialog::refreshHamlibGuidance()
         m_hamlibStatus->setStyleSheet("QLabel { color: #d08a3e; font-size: 11px; }");
         m_hamlibStatus->setText(tr(
             "<b>Hamlib not found.</b> Following a non-TCI radio needs Hamlib's "
-            "<code>rigctld</code>, which ShackLog does not include. "
+            "<code>rigctld</code>, which ShackBook does not include. "
             "<a href=\"https://hamlib.github.io/\">Get Hamlib</a> — or if you "
             "already run WSJT-X or fldigi you very likely have it, and can point "
-            "at it above. ShackLog will not start it for you: run it yourself so "
+            "at it above. ShackBook will not start it for you: run it yourself so "
             "nothing else loses the serial port."));
         return;
     }
@@ -436,7 +436,7 @@ void SettingsDialog::refreshHamlibGuidance()
     m_hamlibStatus->setStyleSheet("QLabel { color: #6b8099; font-size: 11px; }");
     m_hamlibStatus->setText(tr(
         "Hamlib found at <code>%1</code>. It still has to be RUNNING and "
-        "connected to the radio — ShackLog only talks to it, and does not "
+        "connected to the radio — ShackBook only talks to it, and does not "
         "start it. For example:<br><code>rigctld -m &lt;model&gt; -r &lt;port&gt;</code>")
             .arg(found.toHtmlEscaped()));
 }
@@ -586,4 +586,4 @@ void SettingsDialog::onAccept()
     accept();
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

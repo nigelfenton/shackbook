@@ -10,7 +10,7 @@
 #include <QString>
 #include <QDateTime>
 
-namespace ShackLog {
+namespace ShackBook {
 
 struct SpotData {
     QString call;                         // DX station's callsign
@@ -22,4 +22,4 @@ struct SpotData {
     int     lifetimeSec{1800};            // discard after this many seconds (default 30 min)
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

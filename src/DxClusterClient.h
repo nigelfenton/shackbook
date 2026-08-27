@@ -35,7 +35,7 @@
 class QTcpSocket;
 class QTimer;
 
-namespace ShackLog {
+namespace ShackBook {
 
 class DxClusterClient : public QObject {
     Q_OBJECT
@@ -58,7 +58,7 @@ public:
 
 signals:
     void connectionChanged(bool connected);
-    void spotReceived(const ShackLog::SpotData& spot);
+    void spotReceived(const ShackBook::SpotData& spot);
     void rawLine(const QString& line);            // diagnostic
     void loginRejected(const QString& reason);    // server refused our callsign
     // Another client logged in with our exact callsign-SSID and the
@@ -97,4 +97,4 @@ private:
     QByteArray m_rxBuffer;           // accumulator for partial lines
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

@@ -1,11 +1,13 @@
-// ShackLog — standalone ham radio logbook with TCI integration.
+// ShackBook — standalone ham radio logbook with TCI integration.
 // Entry point: build a QApplication, install a dark stylesheet to match
 // the rest of the user's shack stack, and show the main window.
 
+#include "AppRename.h"
 #include "MainWindow.h"
 #include "Version.h"
 
 #include <QApplication>
+#include <QMessageBox>
 #include <QFile>
 
 namespace {
@@ -101,13 +103,31 @@ int main(int argc, char* argv[])
 {
     QApplication::setOrganizationName("G0JKN");
     QApplication::setOrganizationDomain("g0jkn.uk");
-    QApplication::setApplicationName("ShackLog");
-    QApplication::setApplicationVersion(ShackLog::versionString());
+    QApplication::setApplicationName("ShackBook");
+    QApplication::setApplicationVersion(ShackBook::versionString());
+
+    // Carry an existing user's logbooks across the ShackLog -> ShackBook
+    // rename BEFORE anything opens QSettings or a database — both derive
+    // their location from the application name, so without this the app
+    // would come up looking freshly installed with an empty log.
+    // No-op for a new install, and a no-op on every run after the first.
+    const auto migration = ShackBook::migrateAppData(
+        QStringLiteral("ShackLog"), QStringLiteral("ShackBook"));
 
     QApplication app(argc, argv);
     app.setStyleSheet(kAppStylesheet);
 
-    ShackLog::MainWindow w;
+    ShackBook::MainWindow w;
     w.show();
+
+    // Told after show() so the dialog has a parent window and cannot be
+    // lost behind it. Only speaks when something actually happened.
+    if (migration.needsTelling()) {
+        const bool trouble =
+            migration.outcome != ShackBook::MigrationResult::Outcome::Copied;
+        const QString text = ShackBook::describeMigration(migration);
+        if (trouble) QMessageBox::warning(&w, QObject::tr("ShackBook"), text);
+        else         QMessageBox::information(&w, QObject::tr("ShackBook"), text);
+    }
     return app.exec();
 }

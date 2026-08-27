@@ -5,13 +5,13 @@
 #include <QStandardPaths>
 #include <QXmlStreamReader>
 
-namespace ShackLog {
+namespace ShackBook {
 
 QString AetherSettingsReader::defaultSettingsPath()
 {
     // AetherSDR uses QStandardPaths::ConfigLocation, which on Windows
     // resolves to %LOCALAPPDATA%\<OrgName>\<AppName>.  Calling it from
-    // ShackLog gives ShackLog's own org/app subdirectory, NOT
+    // ShackBook gives ShackBook's own org/app subdirectory, NOT
     // AetherSDR's — so we have to construct the path against the
     // *unscoped* config base.  Use the platform's well-known per-user
     // config root and append AetherSDR's path inside it directly.
@@ -98,4 +98,4 @@ AetherDxClusterConfig AetherSettingsReader::readDxClusterConfig(const QString& p
     return out;
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

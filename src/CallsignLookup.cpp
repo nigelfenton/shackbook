@@ -7,7 +7,7 @@
 #include <QUrl>
 #include <QXmlStreamReader>
 
-namespace ShackLog {
+namespace ShackBook {
 
 namespace {
 // Collect every leaf element's text, keyed by lower-cased element name.
@@ -68,7 +68,7 @@ QNetworkReply* CallsignLookup::get(const QString& url)
 {
     QNetworkRequest req{QUrl(url)};
     req.setHeader(QNetworkRequest::UserAgentHeader,
-                  QStringLiteral("ShackLog"));
+                  QStringLiteral("ShackBook"));
     return m_nam->get(req);
 }
 
@@ -99,7 +99,7 @@ void CallsignLookup::lookup(const QString& callIn, bool isUsCall)
 void CallsignLookup::qrzLogin(const QString& pendingCall)
 {
     auto* rep = get(QStringLiteral(
-        "https://xmldata.qrz.com/xml/current/?username=%1;password=%2;agent=ShackLog")
+        "https://xmldata.qrz.com/xml/current/?username=%1;password=%2;agent=ShackBook")
         .arg(QString::fromUtf8(QUrl::toPercentEncoding(m_user)),
              QString::fromUtf8(QUrl::toPercentEncoding(m_pass))));
     connect(rep, &QNetworkReply::finished, this, [this, rep, pendingCall] {
@@ -183,7 +183,7 @@ void CallsignLookup::hamqthLogin(const QString& pendingCall)
 void CallsignLookup::hamqthQuery(const QString& call, bool retryOnExpiry)
 {
     auto* rep = get(QStringLiteral(
-        "https://www.hamqth.com/xml.php?id=%1&callsign=%2&prg=ShackLog")
+        "https://www.hamqth.com/xml.php?id=%1&callsign=%2&prg=ShackBook")
         .arg(m_hamqthSession,
              QString::fromUtf8(QUrl::toPercentEncoding(call))));
     connect(rep, &QNetworkReply::finished, this,
@@ -260,4 +260,4 @@ void CallsignLookup::callookQuery(const QString& call)
     });
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

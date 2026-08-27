@@ -22,7 +22,7 @@ class QNetworkAccessManager;
 class QNetworkReply;
 class QTimer;
 
-namespace ShackLog {
+namespace ShackBook {
 
 class PotaClient : public QObject {
     Q_OBJECT
@@ -39,7 +39,7 @@ public:
     QString lastError() const { return m_lastError; }
 
 signals:
-    void spotReceived(const ShackLog::SpotData& spot);
+    void spotReceived(const ShackBook::SpotData& spot);
     void pollCompleted(int spots, const QString& errorOrEmpty);
 
 private slots:
@@ -54,4 +54,4 @@ private:
     QString  m_lastError;
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

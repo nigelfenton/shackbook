@@ -17,7 +17,7 @@
 
 #include <QString>
 
-namespace ShackLog {
+namespace ShackBook {
 
 struct AetherDxClusterConfig {
     bool    found{false};      // true if at least Host/Port were read
@@ -40,4 +40,4 @@ public:
     static AetherDxClusterConfig readDxClusterConfig(const QString& path = {});
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

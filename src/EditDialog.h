@@ -15,7 +15,7 @@ class QPlainTextEdit;
 class QSpinBox;
 class QDoubleSpinBox;
 
-namespace ShackLog {
+namespace ShackBook {
 
 class LogbookModel;
 
@@ -71,4 +71,4 @@ private:
     QComboBox*  m_lotwRcvd{};
 };
 
-} // namespace ShackLog
+} // namespace ShackBook

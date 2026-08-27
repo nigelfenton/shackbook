@@ -4,7 +4,7 @@
 #include <QStringList>
 #include <QTextStream>
 
-namespace ShackLog {
+namespace ShackBook {
 
 // cty.dat format (https://www.country-files.com/cty-dat-format/):
 //   Entity header — 8 colon-terminated fields on one line:
@@ -131,4 +131,4 @@ CtyDat::Entity CtyDat::lookup(const QString& callIn) const
     return none;
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

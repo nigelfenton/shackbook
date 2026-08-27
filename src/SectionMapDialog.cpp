@@ -8,7 +8,7 @@
 #include <QRegularExpression>
 #include <QVBoxLayout>
 
-namespace ShackLog {
+namespace ShackBook {
 
 namespace {
 
@@ -167,4 +167,4 @@ void SectionMapDialog::refresh()
                               .arg(scanned).arg(noSection));
 }
 
-} // namespace ShackLog
+} // namespace ShackBook

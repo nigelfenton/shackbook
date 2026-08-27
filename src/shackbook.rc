@@ -1,4 +1,4 @@
-// Windows resource: embed the application icon into ShackLog.exe.
+// Windows resource: embed the application icon into ShackBook.exe.
 // Compiled by MSVC's rc.exe / MinGW's windres when this file is listed
 // as a source on a Windows build (see CMakeLists.txt).
 IDI_ICON1 ICON "logbook.ico"

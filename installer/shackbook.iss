@@ -1,27 +1,27 @@
-; Inno Setup script for ShackLog Windows installer.
+; Inno Setup script for ShackBook Windows installer.
 ;
 ; Built by GitHub Actions on tag push (see .github/workflows/release.yml).
 ; Locally: install Inno Setup 6, then from a CMD prompt:
-;   set SHACKLOG_VERSION=0.1.0
-;   set SHACKLOG_STAGING=C:\path\to\staged\ShackLog-v0.1.0-windows-x64
-;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\shacklog.iss
+;   set SHACKBOOK_VERSION=0.1.0
+;   set SHACKBOOK_STAGING=C:\path\to\staged\ShackBook-v0.1.0-windows-x64
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\shackbook.iss
 ;
-; The staging directory must already contain ShackLog.exe + the Qt DLLs +
+; The staging directory must already contain ShackBook.exe + the Qt DLLs +
 ; plugin subdirs (platforms, sqldrivers, …) — i.e. exactly what
 ; windeployqt produces in build/.
 
-#define MyAppName        "ShackLog"
-#define MyAppVersion     GetEnv("SHACKLOG_VERSION")
+#define MyAppName        "ShackBook"
+#define MyAppVersion     GetEnv("SHACKBOOK_VERSION")
 #define MyAppPublisher   "Nigel Fenton (G0JKN / W3)"
-#define MyAppURL         "https://github.com/nigelfenton/shacklog"
-#define MyAppExeName     "ShackLog.exe"
-#define StagingDir       GetEnv("SHACKLOG_STAGING")
+#define MyAppURL         "https://github.com/nigelfenton/shackbook"
+#define MyAppExeName     "ShackBook.exe"
+#define StagingDir       GetEnv("SHACKBOOK_STAGING")
 
 #if MyAppVersion == ""
-  #error SHACKLOG_VERSION must be set before compiling
+  #error SHACKBOOK_VERSION must be set before compiling
 #endif
 #if StagingDir == ""
-  #error SHACKLOG_STAGING must point at a windeployqt'd staging directory
+  #error SHACKBOOK_STAGING must point at a windeployqt'd staging directory
 #endif
 
 [Setup]
@@ -39,7 +39,7 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 LicenseFile={#StagingDir}\LICENSE
 OutputDir=installer-output
-OutputBaseFilename=ShackLog-Setup-{#MyAppVersion}-windows-x64
+OutputBaseFilename=ShackBook-Setup-{#MyAppVersion}-windows-x64
 SetupIconFile=..\src\logbook.ico
 Compression=lzma2/max
 SolidCompression=yes
