@@ -118,12 +118,21 @@ void SessionMapWidget::paintEvent(QPaintEvent*)
         p.drawPath(path);
     }
 
-    // Graticule, faint, for orientation only.
+    // Graticule, faint, for orientation only. Meridians stop at +/-75 and
+    // the equator is the only full parallel drawn heavy: running them to the
+    // poles put a line straight through the Antarctic coast, which read as a
+    // rendering artefact rather than a grid.
     p.setPen(QPen(world::kFieldLine, 1.0));
     for (int lon = -180; lon <= 180; lon += 30)
-        p.drawLine(toXY(lon, -90), toXY(lon, 90));
-    for (int lat = -60; lat <= 60; lat += 30)
+        p.drawLine(toXY(lon, -75), toXY(lon, 75));
+    for (int lat = -60; lat <= 60; lat += 30) {
+        if (lat == 0) continue;                  // drawn separately below
         p.drawLine(toXY(-180, lat), toXY(180, lat));
+    }
+    // The equator, a touch brighter: it is the one parallel that orients the
+    // eye without having to count grid lines.
+    p.setPen(QPen(world::kFieldLine.lighter(135), 1.0));
+    p.drawLine(toXY(-180, 0), toXY(180, 0));
 
     // Paths first, so the contact points sit on top of them.
     if (m_haveOrigin) {
@@ -160,11 +169,32 @@ void SessionMapWidget::paintEvent(QPaintEvent*)
         p.drawEllipse(xy, 3.2, 3.2);
     }
 
-    // The station itself, last and distinct.
+    // The station itself, last and unmistakably different.
+    //
+    // A slightly larger gold DOT was not enough: on a session whose contacts
+    // are mostly one band, the 4.5 px marker sat among 3.2 px dots of a
+    // similar colour right where every path converges, and simply could not
+    // be picked out. Drawn instead as a ringed crosshair, which reads as a
+    // different KIND of thing rather than a bigger dot of the same kind.
     if (m_haveOrigin) {
-        p.setBrush(QColor(0xff, 0xd1, 0x4d));
-        p.setPen(QPen(QColor(0x1a, 0x14, 0x00), 1.5));
-        p.drawEllipse(toXY(m_originLon, m_originLat), 4.5, 4.5);
+        const QPointF o = toXY(m_originLon, m_originLat);
+        const QColor gold(0xff, 0xd1, 0x4d);
+
+        // Dark halo first, so the marker holds up over a cluster of contacts.
+        p.setPen(QPen(QColor(0x0a, 0x10, 0x1e), 3.5));
+        p.setBrush(Qt::NoBrush);
+        p.drawEllipse(o, 6.0, 6.0);
+
+        p.setPen(QPen(gold, 1.8));
+        p.drawEllipse(o, 6.0, 6.0);
+        p.drawLine(QPointF(o.x() - 9.0, o.y()), QPointF(o.x() - 2.5, o.y()));
+        p.drawLine(QPointF(o.x() + 2.5, o.y()), QPointF(o.x() + 9.0, o.y()));
+        p.drawLine(QPointF(o.x(), o.y() - 9.0), QPointF(o.x(), o.y() - 2.5));
+        p.drawLine(QPointF(o.x(), o.y() + 2.5), QPointF(o.x(), o.y() + 9.0));
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(gold);
+        p.drawEllipse(o, 2.0, 2.0);
     }
 }
 
