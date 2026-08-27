@@ -79,6 +79,8 @@ set(SHACKLOG_SOURCES
     # ── Contest definitions + worked/needed counties (QSO party mode) ──
     src/ContestDef.cpp
     src/ContestDef.h
+    src/ContestCalendar.cpp
+    src/ContestCalendar.h
     src/CountyProgress.cpp
     src/CountyProgress.h
     # ── APRS over AetherSDR's KISS-over-TCP TNC (activity + messaging) ──
@@ -93,6 +95,7 @@ set(SHACKLOG_SOURCES
     data/cty.qrc
     data/counties.qrc
     data/contests.qrc
+    data/calendar.qrc
 )
 
 # Windows: link as a GUI app so no console window appears at launch.
@@ -276,6 +279,17 @@ if(SHACKLOG_TESTS)
         SHACKLOG_CONTESTS_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/contests.dat")
     target_link_libraries(contest_county_test PRIVATE Qt6::Core)
     add_test(NAME contest_county_test COMMAND contest_county_test)
+
+    add_executable(contest_calendar_test
+        tests/contest_calendar_test.cpp
+        src/ContestCalendar.cpp
+        src/ContestCalendar.h
+    )
+    target_include_directories(contest_calendar_test PRIVATE src)
+    target_compile_definitions(contest_calendar_test PRIVATE
+        SHACKLOG_CALENDAR_DAT="${CMAKE_CURRENT_SOURCE_DIR}/data/calendar.dat")
+    target_link_libraries(contest_calendar_test PRIVATE Qt6::Core)
+    add_test(NAME contest_calendar_test COMMAND contest_calendar_test)
 
     add_executable(tci_discovery_test
         tests/tci_discovery_test.cpp
