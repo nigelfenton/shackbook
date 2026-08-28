@@ -8,7 +8,7 @@ are left unedited as the historical record. The format follows
 `vX.Y.Z` tag; CI then builds the Windows installer + zip, Linux AppImage, and
 macOS DMG and attaches them to the GitHub release.
 
-## [Unreleased]
+## [0.7.0] - 2026-08-27
 
 ### Changed
 - **Renamed from ShackLog to ShackBook.** A UK amateur radio logging program
@@ -24,6 +24,26 @@ macOS DMG and attaches them to the GitHub release.
 - ADIF exports now carry `PROGRAMID: ShackBook` and Cabrillo exports
   `CREATED-BY: ShackBook`. Logs exported before the rename keep the old name,
   which is correct — that is what produced them.
+
+### Added
+- **Session Map** (`Maps → Session Map…`) — plots one operating session's QSOs
+  with great-circle paths from your own grid, coloured by band. A session is
+  derived: a gap of more than two hours starts a new one, which keeps an
+  evening crossing midnight UTC in one piece. Says how many QSOs it could not
+  place rather than dropping them silently.
+- **QSO Party mode** (`Tools → QSO Party…`) — a worked/needed county table for
+  state QSO parties, with the needed counties listed rather than merely
+  counted, and a calendar of what is running now or coming up.
+- **US county reference list** — 3235 counties from US Census 2020 FIPS data,
+  bundled rather than fetched so it works at a field site with no internet.
+  Includes Virginia's independent cities, Louisiana parishes, Alaska boroughs
+  and census areas, and Puerto Rico municipios.
+- **Contest definitions and calendar** — what a contest's exchange is, and
+  when it runs. The calendar stores recurrence rules ("the second full weekend
+  of August") and computes dates, so it stays correct in years nobody updates
+  the file. Every bundled definition states whether its exchange has been
+  confirmed against the sponsor's published rules; all currently read
+  UNCONFIRMED.
 
 ## [0.6.0] - 2026-08-05
 
