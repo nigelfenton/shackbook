@@ -32,7 +32,8 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
-#include <QDir>
+#include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QEventLoop>
 #include <QInputDialog>
@@ -127,29 +128,61 @@ QString logsDirPath()
     return dir;
 }
 
-QString callToLogFile(QString call)
-{
-    call = call.toUpper();
-    call.replace(QRegularExpression(QStringLiteral("[^A-Z0-9]")),
-                 QStringLiteral("_"));          // G0JKN/P → G0JKN_P
-    return logsDirPath() + QStringLiteral("/shackbook-") + call
-         + QStringLiteral(".sqlite");
-}
+QString callToLogFile(QString call)
+{
+    call = call.toUpper();
+    call.replace(QRegularExpression(QStringLiteral("[^A-Z0-9]")),
+                 QStringLiteral("_"));          // G0JKN/P -> G0JKN_P
+
+    const QString base = logsDirPath() + QStringLiteral("/");
+    const QString current = base + QStringLiteral("shackbook-") + call
+                          + QStringLiteral(".sqlite");
+
+    // Prefer the file that already EXISTS. A log created before the
+    // ShackLog -> ShackBook rename is still named "shacklog-<CALL>.sqlite",
+    // and the migration copies it across under that name. Always returning
+    // the new-style path would quietly open a fresh empty database beside
+    // the operator's real one, which looks exactly like data loss.
+    if (!QFile::exists(current)) {
+        const QString legacy = base + QStringLiteral("shacklog-") + call
+                             + QStringLiteral(".sqlite");
+        if (QFile::exists(legacy)) return legacy;
+    }
+    return current;   // new log, or one already migrated by name
+}
 
-QStringList existingLogCalls()
-{
-    QStringList calls;
-    const QDir dir(logsDirPath());
-    const auto files = dir.entryList({QStringLiteral("shackbook-*.sqlite")},
-                                     QDir::Files, QDir::Name);
-    for (const QString& f : files) {
-        QString call = f;
-        call.remove(0, QStringLiteral("shackbook-").size());
-        call.chop(QStringLiteral(".sqlite").size());
-        if (!call.isEmpty()) calls << call;
-    }
-    return calls;
-}
+QStringList existingLogCalls()
+{
+    // BOTH prefixes, deliberately. Logs created before the ShackLog ->
+    // ShackBook rename are named "shacklog-<CALL>.sqlite", and the migration
+    // copies them across under those names rather than renaming the
+    // operator's files behind their back. Searching only the new prefix made
+    // every existing logbook invisible even though it had been carried over
+    // correctly - the data was there, the picker just could not see it.
+    //
+    // The old prefix stays supported indefinitely: these are the operator's
+    // files, and no amount of tidiness justifies silently renaming somebody's
+    // logbook.
+    QSet<QString> seen;
+    QStringList calls;
+    const QDir dir(logsDirPath());
+    for (const QString& prefix : {QStringLiteral("shackbook-"),
+                                  QStringLiteral("shacklog-")}) {
+        const auto files = dir.entryList({prefix + QStringLiteral("*.sqlite")},
+                                         QDir::Files, QDir::Name);
+        for (const QString& f : files) {
+            QString call = f;
+            call.remove(0, prefix.size());
+            call.chop(QStringLiteral(".sqlite").size());
+            if (!call.isEmpty() && !seen.contains(call)) {
+                seen.insert(call);
+                calls << call;
+            }
+        }
+    }
+    calls.sort();
+    return calls;
+}
 
 } // namespace
 
