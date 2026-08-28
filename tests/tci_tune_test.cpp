@@ -69,6 +69,31 @@ int main(int argc, char** argv)
     checkMode("FT8",  14.074, "digu");
     checkMode("FT4",   7.047, "digu");
 
+    // ── ⭐ 60 m is USB despite sitting below 10 MHz ─────────────────────
+    // The exception that a plain "< 10 MHz means LSB" rule gets wrong for an
+    // entire band. Both the voice and the digital-voice paths must know it,
+    // or a 60 m spot puts the radio on the wrong sideband.
+    checkMode("SSB",    5.357, "usb");   // 60 m — USB by convention and regulation
+    checkMode("FREEDV", 5.357, "digu");  // and the DV path must agree
+    checkMode("SSB",    5.200, "lsb");   // just below the 60 m allocation
+    checkMode("SSB",    5.500, "lsb");   // just above it
+
+    // ── ⭐ Digital voice: FreeDV / RADE run in an SSB pipe ──────────────
+    // Not a mode the radio knows about — the rig is a dumb sideband pipe and
+    // the codec runs in software, so the answer is a DATA sideband picked by
+    // the same band rule as voice. AetherSDR does the same for its own RADE
+    // pipeline ("RADE requires DIGU or DIGL").
+    checkMode("FREEDV",       14.236, "digu");   // the FreeDV calling frequency
+    checkMode("RADE",         14.236, "digu");   // current-generation FreeDV
+    checkMode("DIGITALVOICE", 14.236, "digu");   // the ADIF spelling
+    checkMode("DV",           14.236, "digu");   // the short form
+    checkMode("FREEDV",        7.177, "digl");   // 40 m: lower side
+    checkMode("freedv",       14.236, "digu");   // case-insensitive like the rest
+    checkMode("FREEDV",         0.0,  "");       // no frequency: do NOT guess
+
+    // JS8 joins the fixed upper-side data modes.
+    checkMode("JS8", 14.078, "digu");
+
     // ── ⭐ Ambiguous or unknown: leave the radio alone ──────────────────
     checkMode("DIGITAL", 14.070, "");    // could be any of a dozen things
     checkMode("DATA",    14.070, "");
