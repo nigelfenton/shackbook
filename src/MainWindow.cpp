@@ -1687,6 +1687,57 @@ void MainWindow::onShowSpotIndex()
     table->horizontalHeader()->setStretchLastSection(true);
     lay->addWidget(table, 1);
 
+
+    // Double-click tunes the radio to the spot (#9). OFF by default: this
+    // MOVES somebody's transceiver, and an operator running split or sharing
+    // the rig with another program should not discover that by accident.
+    const bool tuneOnDouble =
+        m_model && m_model->settingValue("SPOT_DOUBLECLICK_TUNES", "0") == "1";
+    const bool alsoMode =
+        m_model && m_model->settingValue("SPOT_DOUBLECLICK_SETS_MODE", "1") == "1";
+
+    auto* status = new QLabel;
+    status->setStyleSheet("QLabel { color: #6b8099; font-size: 10px; }");
+    status->setText(tuneOnDouble
+        ? QStringLiteral("Double-click a spot to tune the radio to it.")
+        : QStringLiteral("Double-click tuning is off - enable it in Settings > TCI."));
+    lay->addWidget(status);
+
+    connect(table, &QTableWidget::doubleClicked, dlg,
+            [this, rows, tuneOnDouble, alsoMode, status](const QModelIndex& ix) {
+        if (!ix.isValid() || ix.row() < 0 || ix.row() >= rows.size()) return;
+        const SpotData& s = rows[ix.row()];
+
+        if (!tuneOnDouble) {
+            status->setText(QStringLiteral(
+                "Double-click tuning is off - enable it in Settings > TCI."));
+            return;
+        }
+        // Say WHY nothing happened. A double-click with no visible effect
+        // reads as a broken feature rather than a disconnected radio.
+        if (!m_tci || !m_tci->connected()) {
+            status->setText(QStringLiteral("No radio connected - cannot tune to %1.")
+                                .arg(s.call));
+            return;
+        }
+        if (!m_tci->tuneToMhz(s.freqMhz)) {
+            status->setText(QStringLiteral("Could not tune to %1 MHz.")
+                                .arg(s.freqMhz, 0, 'f', 4));
+            return;
+        }
+        // Mode is best-effort: many spots carry none, and an unrecognised one
+        // leaves the radio's current mode alone rather than guessing.
+        QString note = QStringLiteral("Tuned to %1 - %2 MHz")
+                           .arg(s.call).arg(s.freqMhz, 0, 'f', 4);
+        if (alsoMode && !s.mode.trimmed().isEmpty()) {
+            if (m_tci->setModeString(s.mode))
+                note += QStringLiteral(" (%1)").arg(s.mode.toUpper());
+            else
+                note += QStringLiteral(" - mode not recognised, left unchanged");
+        }
+        status->setText(note);
+    });
+
     auto* row = new QHBoxLayout;
     auto* closeBtn = new QPushButton("Close");
     connect(closeBtn, &QPushButton::clicked, dlg, &QDialog::close);

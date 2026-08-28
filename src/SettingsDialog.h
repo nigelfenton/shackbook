@@ -59,7 +59,9 @@ private:
     QLineEdit*   m_rigctldPath{};
     QPushButton* m_tciScan{};
     QLineEdit*  m_tciNickname{};
-    QCheckBox*  m_tciAutoConnect{};
+    QCheckBox*  m_tciAutoConnect{};
+    QCheckBox*  m_spotTunes{};
+    QCheckBox*  m_spotSetsMode{};
 
     // DX Cluster
     QCheckBox*  m_dxcEnable{};
