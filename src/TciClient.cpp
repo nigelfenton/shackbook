@@ -165,10 +165,14 @@ QString tciModulationForAdifMode(const QString& adifMode, double currentMhz)
         {QStringLiteral("LSB"),   QStringLiteral("lsb")},
         {QStringLiteral("AM"),    QStringLiteral("am")},
         {QStringLiteral("FM"),    QStringLiteral("nfm")},
+        // RTTY is conventionally LSB-side; the rest of the data modes are
+        // upper-side by convention on every band they are used on, so these
+        // stay fixed rather than following the sideband rule above.
         {QStringLiteral("RTTY"),  QStringLiteral("digl")},
         {QStringLiteral("FT8"),   QStringLiteral("digu")},
         {QStringLiteral("FT4"),   QStringLiteral("digu")},
         {QStringLiteral("JT65"),  QStringLiteral("digu")},
+        {QStringLiteral("JS8"),   QStringLiteral("digu")},
         {QStringLiteral("PSK"),   QStringLiteral("digu")},
         {QStringLiteral("PSK31"), QStringLiteral("digu")},
     };
@@ -176,10 +180,41 @@ QString tciModulationForAdifMode(const QString& adifMode, double currentMhz)
     const QString key = adifMode.trimmed().toUpper();
     if (key.isEmpty()) return {};
 
+    // Both SSB and the digital-voice modes need a sideband, and they must
+    // agree — a spot that tunes USB for voice but DIGL for FreeDV on the same
+    // band would be incoherent. One helper, used by both.
+    //
+    // 60 m is the exception that matters: it sits below 10 MHz but is USB by
+    // convention (and by regulation in most countries). A plain "< 10 MHz
+    // means LSB" rule puts the radio on the wrong sideband for the whole band.
+    const auto upperSideband = [](double mhz) -> bool {
+        if (mhz >= 5.25 && mhz <= 5.45) return true;   // 60 m: USB despite the frequency
+        return mhz >= 10.0;
+    };
+
     // SSB is not a sideband. Resolve it by frequency, or not at all.
     if (key == QLatin1String("SSB")) {
         if (!(currentMhz > 0.0)) return {};
-        return currentMhz < 10.0 ? QStringLiteral("lsb") : QStringLiteral("usb");
+        return upperSideband(currentMhz) ? QStringLiteral("usb")
+                                         : QStringLiteral("lsb");
+    }
+
+    // ── Digital voice ─────────────────────────────────────────────────
+    //
+    // FreeDV — including RADE (Radio Autoencoder), its current generation —
+    // is not a mode the radio knows about. The rig is a dumb SSB pipe on an
+    // ordinary HF frequency and the codec runs in software on top, so the
+    // right thing to send is a DATA sideband, exactly as AetherSDR does for
+    // its own RADE pipeline (MainWindow_DigitalModes.cpp: "RADE requires
+    // DIGU or DIGL").
+    //
+    // This is why these belong here rather than being refused as ambiguous:
+    // unlike a bare "DIGITAL", a FreeDV spot has an unambiguous answer.
+    if (key == QLatin1String("FREEDV") || key == QLatin1String("RADE")
+        || key == QLatin1String("DIGITALVOICE") || key == QLatin1String("DV")) {
+        if (!(currentMhz > 0.0)) return {};
+        return upperSideband(currentMhz) ? QStringLiteral("digu")
+                                         : QStringLiteral("digl");
     }
 
     const auto it = kMap.constFind(key);
