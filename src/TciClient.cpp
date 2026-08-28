@@ -1,4 +1,6 @@
-#include "TciClient.h"
+#include "TciClient.h"
+
+#include <QHash>
 
 #include <QWebSocket>
 #include <QTimer>
@@ -134,6 +136,66 @@ void TciClient::onTextMessage(const QString& message)
     }
 }
 
+bool TciClient::tuneToMhz(double mhz)
+{
+    // Refuse rather than send nonsense. A spot with a missing or malformed
+    // frequency reaches here as 0 or negative, and "tune to 0 Hz" is not a
+    // request any radio should be asked to interpret. The upper bound is
+    // deliberately generous — this guards against garbage, not against
+    // microwave operators.
+    if (!m_connected || !(mhz > 0.0) || mhz > 100000.0)
+        return false;
+
+    // vfo:rx,vfo,freqHz — the same shape parseLine() reads back, so a
+    // successful tune produces a frequencyChanged() echo from the radio
+    // rather than us assuming it worked.
+    const qint64 hz = static_cast<qint64>(mhz * 1.0e6 + 0.5);
+    send(QStringLiteral("vfo:0,0,%1;").arg(hz));
+    return true;
+}
+
+QString tciModulationForAdifMode(const QString& adifMode, double currentMhz)
+{
+    // Only modes with an unambiguous mapping are listed. A spot saying
+    // "DIGITAL" or "DATA" could be any of a dozen things, and choosing one
+    // for the operator is worse than leaving the radio where it is.
+    static const QHash<QString, QString> kMap = {
+        {QStringLiteral("CW"),    QStringLiteral("cw")},
+        {QStringLiteral("USB"),   QStringLiteral("usb")},
+        {QStringLiteral("LSB"),   QStringLiteral("lsb")},
+        {QStringLiteral("AM"),    QStringLiteral("am")},
+        {QStringLiteral("FM"),    QStringLiteral("nfm")},
+        {QStringLiteral("RTTY"),  QStringLiteral("digl")},
+        {QStringLiteral("FT8"),   QStringLiteral("digu")},
+        {QStringLiteral("FT4"),   QStringLiteral("digu")},
+        {QStringLiteral("JT65"),  QStringLiteral("digu")},
+        {QStringLiteral("PSK"),   QStringLiteral("digu")},
+        {QStringLiteral("PSK31"), QStringLiteral("digu")},
+    };
+
+    const QString key = adifMode.trimmed().toUpper();
+    if (key.isEmpty()) return {};
+
+    // SSB is not a sideband. Resolve it by frequency, or not at all.
+    if (key == QLatin1String("SSB")) {
+        if (!(currentMhz > 0.0)) return {};
+        return currentMhz < 10.0 ? QStringLiteral("lsb") : QStringLiteral("usb");
+    }
+
+    const auto it = kMap.constFind(key);
+    return it == kMap.constEnd() ? QString{} : *it;
+}
+
+bool TciClient::setModeString(const QString& adifMode)
+{
+    if (!m_connected) return false;
+    const QString mod = tciModulationForAdifMode(adifMode, m_freqMhz);
+    if (mod.isEmpty()) return false;   // unknown: leave the radio alone
+    send(QStringLiteral("modulation:0,%1;").arg(mod));
+    return true;
+}
+
+
 void TciClient::parseLine(const QString& line)
 {
     // Format: command:arg1,arg2,arg3

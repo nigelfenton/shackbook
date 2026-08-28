@@ -95,6 +95,10 @@ void SettingsDialog::buildUI()
         "rigs driven by the same software look identical without a nickname.\n\n"
         "Stored per host:port. Leave blank to record the announced name.");
     m_tciAutoConnect = new QCheckBox("Connect to TCI server on launch");
+    // Off by default: tuning MOVES the radio, and an operator running split
+    // should not discover that by double-clicking a spot out of curiosity.
+    m_spotTunes = new QCheckBox("Double-clicking a spot tunes the radio to it");
+    m_spotSetsMode = new QCheckBox("...and sets the mode when the spot carries one");
     m_radioSource = new QComboBox;
     m_radioSource->addItem("TCI — AetherSDR, ExpertSDR, SunSDR", "tci");
     m_radioSource->addItem("Hamlib rigctld — Icom, Yaesu, Kenwood, others", "rigctld");
@@ -133,6 +137,10 @@ void SettingsDialog::buildUI()
     tciL->addRow(QString(), m_tciScan);
     tciL->addRow("Radio nickname", m_tciNickname);
     tciL->addRow(m_tciAutoConnect);
+    tciL->addRow(m_spotTunes);
+    tciL->addRow(m_spotSetsMode);
+    // The mode option is meaningless on its own.
+    connect(m_spotTunes, &QCheckBox::toggled, m_spotSetsMode, &QWidget::setEnabled);
     tabs->addTab(tci, "TCI");
 
     // ── DX Cluster ──────────────────────────────────────────────────────
@@ -324,6 +332,9 @@ void SettingsDialog::populate()
             [this](const QString&) { refreshHamlibGuidance(); });
     refreshHamlibGuidance();
     m_tciAutoConnect->setChecked(m_model->settingValue("TCI_AUTOCONNECT", "1") == "1");
+    m_spotTunes->setChecked(m_model->settingValue("SPOT_DOUBLECLICK_TUNES", "0") == "1");
+    m_spotSetsMode->setChecked(m_model->settingValue("SPOT_DOUBLECLICK_SETS_MODE", "1") == "1");
+    m_spotSetsMode->setEnabled(m_spotTunes->isChecked());
 
     // DX Cluster — auto-detect from AetherSDR's config, default to "on" if
     // a cluster is configured there; otherwise off until the user opts in.
@@ -530,6 +541,8 @@ void SettingsDialog::onAccept()
     m_model->setSetting(rig ? "RIGCTLD_PORT" : "TCI_PORT", port);
     m_model->setSetting("HAMLIB_RIGCTLD_PATH", m_rigctldPath->text().trimmed());
     m_model->setSetting("TCI_AUTOCONNECT",  m_tciAutoConnect->isChecked() ? "1" : "0");
+    m_model->setSetting("SPOT_DOUBLECLICK_TUNES",    m_spotTunes->isChecked() ? "1" : "0");
+    m_model->setSetting("SPOT_DOUBLECLICK_SETS_MODE", m_spotSetsMode->isChecked() ? "1" : "0");
 
     // Key the nickname off the host:port as SAVED, not as loaded — if the
     // user repointed this dialog at a different radio, the name they just

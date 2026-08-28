@@ -34,6 +34,20 @@ inline QString tciNicknameKey(const QString& host, const QString& port)
     return QStringLiteral("TCI_NICKNAME_%1_%2").arg(host, port);
 }
 
+// ADIF mode -> TCI modulation string, as a pure function so the mapping can
+// be tested without a radio, a socket, or a TciClient.
+//
+// `currentMhz` exists only to resolve "SSB", which is not a sideband: below
+// 10 MHz it means LSB and above it USB, the same rule an operator applies
+// without thinking. Getting that wrong puts the radio on the opposite
+// sideband and the DX sounds like nothing at all.
+//
+// Returns an empty string when the mode is unknown, ambiguous, or when SSB
+// cannot be resolved because no frequency is known — every one of which
+// means "leave the radio alone" rather than "pick something".
+QString tciModulationForAdifMode(const QString& adifMode, double currentMhz);
+
+
 class TciClient : public QObject {
     Q_OBJECT
 
@@ -71,6 +85,26 @@ public:
     // is why a user-set nickname overrides this when attributing a QSO.
     QString deviceName()            const { return m_device; }
 
+    // ── Tuning ────────────────────────────────────────────────────────
+    //
+    // Until now this client was read-only: it followed the radio so a QSO
+    // could be logged with the right frequency and mode. These SEND, which
+    // means a bug here moves somebody's radio mid-QSO rather than merely
+    // showing a wrong number. Both are deliberately narrow — RX0/VFO0, no
+    // split handling, no TX — and both no-op when not connected rather than
+    // queueing, because a tune that lands after the operator has moved on is
+    // worse than one that never happened.
+    //
+    // Return false when nothing was sent, so the caller can say so rather
+    // than leaving the operator wondering whether the click registered.
+    bool tuneToMhz(double mhz);
+
+    // Best-effort: an unrecognised mode is not sent and returns false,
+    // leaving the radio on whatever it had. Spot sources often omit the mode
+    // entirely, so failing here must not prevent the frequency change.
+    bool setModeString(const QString& adifMode);
+
+
 signals:
     void connectionChanged(bool connected);
     void frequencyChanged(double mhz);

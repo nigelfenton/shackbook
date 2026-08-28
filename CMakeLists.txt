@@ -282,6 +282,15 @@ if(SHACKBOOK_TESTS)
     target_include_directories(app_rename_test PRIVATE src)
     target_link_libraries(app_rename_test PRIVATE Qt6::Core)
     add_test(NAME app_rename_test COMMAND app_rename_test)
+
+    add_executable(tci_tune_test
+        tests/tci_tune_test.cpp
+        src/TciClient.cpp
+        src/TciClient.h
+    )
+    target_include_directories(tci_tune_test PRIVATE src)
+    target_link_libraries(tci_tune_test PRIVATE Qt6::Core Qt6::WebSockets)
+    add_test(NAME tci_tune_test COMMAND tci_tune_test)
 
     add_executable(contest_county_test
         tests/contest_county_test.cpp
