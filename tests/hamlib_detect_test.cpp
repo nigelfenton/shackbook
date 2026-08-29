@@ -100,6 +100,49 @@ int main(int argc, char** argv)
     check(RigctldClient::findRigctld(QStringLiteral("   ")) == auto1,
           "a whitespace-only configured path is treated as empty");
 
+#ifdef Q_OS_WIN
+    // -- The Windows installer uses a VERSIONED directory ----------------
+    //
+    // hamlib-w64-<version>.exe installs to "C:/Program Files/hamlib-w64-4.7.2"
+    // and does not amend PATH, so the unversioned "hamlib" candidate and the
+    // PATH fallback BOTH miss a completely normal install. That is not
+    // hypothetical: it is what sent a real operator hunting on 2026-08-29,
+    // with Hamlib installed and working from a terminal while ShackBook
+    // reported it missing.
+    //
+    // Only assert when such an install is actually present. A machine
+    // without one must not fail this test -- but where one exists, refusing
+    // to find it is the regression.
+    {
+        QString installed;
+        for (const QString& root : {QStringLiteral("C:/Program Files"),
+                                    QStringLiteral("C:/Program Files (x86)")}) {
+            QDir dir(root);
+            if (!dir.exists())
+                continue;
+            for (const QString& name : dir.entryList({QStringLiteral("hamlib*")},
+                                                     QDir::Dirs | QDir::NoDotAndDotDot)) {
+                const QString exe = root + QLatin1Char('/') + name
+                                  + QStringLiteral("/bin/rigctld.exe");
+                if (QFileInfo::exists(exe)) {
+                    installed = exe;
+                    break;
+                }
+            }
+            if (!installed.isEmpty())
+                break;
+        }
+        if (installed.isEmpty()) {
+            std::printf("      (no versioned Hamlib install here -- skipped)\n");
+        } else {
+            check(!auto1.isEmpty(),
+                  "a versioned Hamlib install is FOUND, not reported missing");
+            check(auto1.contains(QStringLiteral("rigctld.exe")),
+                  "and what auto-detect reports is a rigctld executable");
+        }
+    }
+#endif
+
     std::printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASSED",
                 failures, failures == 1 ? "" : "s");
     return failures ? 1 : 0;

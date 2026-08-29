@@ -1,7 +1,9 @@
 #include "RigctldClient.h"
 
+#include <QDir>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QVersionNumber>
 #include <QTcpSocket>
 #include <QTimer>
 
@@ -76,6 +78,50 @@ QString RigctldClient::findRigctld(const QString& configuredPath)
     };
     for (const QString& c : candidates)
         if (QFileInfo::exists(c)) return c;
+
+#ifdef Q_OS_WIN
+    // THE OFFICIAL WINDOWS INSTALLER DOES NOT CREATE "hamlib".
+    //
+    // hamlib-w64-<version>.exe installs to a VERSION-STAMPED directory,
+    // "C:/Program Files/hamlib-w64-4.7.2/bin/rigctld.exe", and does not amend
+    // PATH. So the plain "hamlib" candidate above matches nothing on a
+    // completely normal install, and the PATH fallback below misses too: the
+    // operator installs Hamlib, it runs fine from a terminal, and ShackBook
+    // still reports it missing. Observed on 4.7.2, 2026-08-29.
+    //
+    // Prefer the HIGHEST version found, so installing a newer Hamlib beside
+    // an old one moves us forward rather than pinning us to whatever sorts
+    // first alphabetically -- 4.10 must beat 4.9, which a plain string sort
+    // gets wrong. QVersionNumber compares numerically.
+    for (const QString& root : {QStringLiteral("C:/Program Files"),
+                                QStringLiteral("C:/Program Files (x86)")}) {
+        QDir dir(root);
+        if (!dir.exists())
+            continue;
+        QString best;
+        QVersionNumber bestVersion;
+        const QStringList versioned = dir.entryList(
+            {QStringLiteral("hamlib*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString& name : versioned) {
+            const QString exe =
+                root + QLatin1Char('/') + name + QStringLiteral("/bin/rigctld.exe");
+            if (!QFileInfo::exists(exe))
+                continue;
+            // "hamlib-w64-4.7.2" -> 4.7.2. A directory whose tail does not
+            // parse still counts, just at the bottom of the ordering, so a
+            // differently-named install is found rather than ignored.
+            const qsizetype dash = name.lastIndexOf(QLatin1Char('-'));
+            const QVersionNumber version = QVersionNumber::fromString(
+                dash >= 0 ? name.mid(dash + 1) : QString{});
+            if (best.isEmpty() || version > bestVersion) {
+                best = exe;
+                bestVersion = version;
+            }
+        }
+        if (!best.isEmpty())
+            return best;
+    }
+#endif
 
     // PATH covers Linux packages, Homebrew, and any custom install.
     return QStandardPaths::findExecutable(QStringLiteral("rigctld"));
