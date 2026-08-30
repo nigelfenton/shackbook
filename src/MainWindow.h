@@ -34,6 +34,7 @@ namespace ShackBook {
 class LogbookModel;
 class TciClient;
 class RigctldClient;
+class RigctldSupervisor;
 class SpotIndex;
 class DxClusterClient;
 class PotaClient;
@@ -241,6 +242,9 @@ private:
     QAction* m_actExportCab{};
     QAction* m_actSettings{};
     QAction* m_actFindRadios{};
+    // Starts rigctld only when nothing is already serving, and stops only
+    // what it started. See RigctldSupervisor.h. #13.
+    RigctldSupervisor* m_rigctldSupervisor{};
     QAction* m_actConnectTci{};
     QAction* m_actDisconnectTci{};
     QAction* m_actDxcLog{};

@@ -42,6 +42,8 @@ set(SHACKBOOK_SOURCES
     src/RigctldClient.h
     src/HamlibRigList.cpp
     src/HamlibRigList.h
+    src/RigctldSupervisor.cpp
+    src/RigctldSupervisor.h
     src/LogbookModel.cpp
     src/LogbookModel.h
     src/AdifReader.cpp
@@ -345,6 +347,17 @@ if(SHACKBOOK_TESTS)
     # Radio mode -> ADIF mapping. Fed by BOTH the TCI and rigctld paths,
     # which speak different vocabularies -- an unmatched string yields an
     # empty mode and a QSO logged without one. See issue #16.
+    # rigctld lifecycle: adopt a running server, never spawn over one, and
+    # never leave behind one we started. See issue #13.
+    add_executable(rigctld_supervisor_test
+        tests/rigctld_supervisor_test.cpp
+        src/RigctldSupervisor.cpp
+        src/RigctldSupervisor.h
+    )
+    target_include_directories(rigctld_supervisor_test PRIVATE src)
+    target_link_libraries(rigctld_supervisor_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME rigctld_supervisor_test COMMAND rigctld_supervisor_test)
+
     add_executable(adif_mode_map_test
         tests/adif_mode_map_test.cpp
         src/LogbookModel.cpp

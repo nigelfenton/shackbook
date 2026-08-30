@@ -9,6 +9,7 @@
 #include "Version.h"
 #include "server/WsjtxAdifReceiver.h"
 #include "EditDialog.h"
+#include "RigctldSupervisor.h"
 #include "SettingsDialog.h"
 #include "SpotIndex.h"
 #include "DxClusterClient.h"
@@ -193,6 +194,7 @@ MainWindow::MainWindow(QWidget* parent)
       m_model(new LogbookModel(this)),
       m_tci(new TciClient(this)),
       m_rigctld(new RigctldClient(this)),
+      m_rigctldSupervisor(new RigctldSupervisor(this)),
       m_spotIndex(new SpotIndex(this)),
       m_dxc(new DxClusterClient(this)),
       m_pota(new PotaClient(this)),
@@ -276,6 +278,13 @@ MainWindow::MainWindow(QWidget* parent)
     // rigctld feeds the SAME handlers. Frequency and mode are frequency and
     // mode whatever carried them, so the rest of the app never learns which
     // kind of radio is attached.
+    // A rigctld that dies takes the radio link with it. The old design
+    // could not report that, because it never knew the process existed.
+    connect(m_rigctldSupervisor, &RigctldSupervisor::exitedUnexpectedly,
+            this, [this](const QString& detail) {
+                statusBar()->showMessage(
+                    tr("rigctld stopped: %1").arg(detail), 10000);
+            });
     connect(m_rigctld, &RigctldClient::connectionChanged,
             this, &MainWindow::onTciConnectionChanged);
     connect(m_rigctld, &RigctldClient::frequencyChanged,
@@ -1514,6 +1523,50 @@ void MainWindow::connectActiveSource()
                                      8000);
         }
 
+        // ADOPT IF SOMETHING IS ALREADY SERVING, otherwise offer to start one.
+        // ShackBook used to refuse outright, on the grounds that grabbing the
+        // serial port could take it from WSJT-X -- but the operator then ran
+        // rigctld by hand anyway, so the port was taken regardless and all the
+        // refusal bought was a terminal they had to keep open. #13.
+        //
+        // The safety that actually matters is never spawning a SECOND server
+        // over someone else's, and never leaving behind one we started. Both
+        // live in RigctldSupervisor.
+        if (!RigctldSupervisor::serverAnswering(host, port)) {
+            const QString model = m_model->settingValue("HAMLIB_RIG_MODEL");
+            const QString serialPort = m_model->settingValue("HAMLIB_RIG_PORT");
+            const QString baud = m_model->settingValue("HAMLIB_RIG_BAUD");
+            if (rigctld.isEmpty() || model.isEmpty() || serialPort.isEmpty()) {
+                // Nothing to offer -- say what is missing rather than
+                // silently failing to connect.
+                statusBar()->showMessage(
+                    tr("No rigctld is running. Set the radio model and serial "
+                       "port in Settings, then connect again."), 8000);
+            } else {
+                // ASK. Starting a process that seizes a serial port is not
+                // something to do behind the operator's back.
+                const auto answer = QMessageBox::question(
+                    this, tr("Start rigctld?"),
+                    tr("No rigctld is running on %1:%2.\n\n"
+                       "Start one now for %3 on %4?\n\n"
+                       "ShackBook will stop it again when it exits. An "
+                       "already-running rigctld is never touched.")
+                        .arg(host).arg(port).arg(model, serialPort),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                if (answer == QMessageBox::Yes) {
+                    const auto st = m_rigctldSupervisor->ensureRunning(
+                        rigctld, host, port, model, serialPort, baud);
+                    if (st == RigctldSupervisor::State::Failed) {
+                        // rigctld's own words: "port busy" and "no such
+                        // device" need different fixes, and a generic
+                        // failure message would hide which one this is.
+                        QMessageBox::warning(this, tr("rigctld did not start"),
+                                             m_rigctldSupervisor->lastError());
+                    }
+                }
+            }
+        }
+
         m_rigctld->connectToServer(host, port);
         statusBar()->showMessage(
             tr("Connecting to rigctld at %1:%2…").arg(host).arg(port), 3000);
@@ -1539,6 +1592,11 @@ void MainWindow::onDisconnectTci()
     // one was live, the other would otherwise be left connected invisibly.
     m_tci->disconnectFromServer();
     m_rigctld->disconnectFromServer();
+    // Stop a rigctld WE started -- otherwise disconnecting would leave it
+    // holding the serial port with nothing using it. An adopted one is
+    // left alone: it was serving somebody before us and still is.
+    if (m_rigctldSupervisor)
+        m_rigctldSupervisor->stopIfOurs();
 }
 
 void MainWindow::onTciConnectionChanged(bool connected)
