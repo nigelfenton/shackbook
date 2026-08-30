@@ -1289,13 +1289,39 @@ void LogbookModel::adifModeFromTciMode(const QString& tciMode,
                                        QString* adifSubmode)
 {
     QString mode, sub;
-    const QString m = tciMode.toUpper();
+    QString m = tciMode.toUpper();
+
+    // HAMLIB MARKS A DATA MODE WITH A "-D" SUFFIX, and this function is now
+    // fed by the rigctld path as well as TCI. Its list below is TCI's
+    // vocabulary (NFM, DFM, DIGU), so an IC-9700 in FM data reported "FM-D",
+    // matched nothing, and the QSO was logged with NO MODE AT ALL -- silently.
+    // Issue #16.
+    //
+    // Strip the suffix and log the CARRIER: FM-D -> FM, AM-D -> AM,
+    // USB-D -> SSB/USB. That is not the whole truth -- a packet contact over
+    // FM is arguably a PKT QSO -- but the radio cannot know which digital
+    // mode is in use, because that lives in the soundcard program. An FM QSO
+    // that was really packet is a small inaccuracy; a QSO with no mode is a
+    // broken record. Deliberate trade, not an oversight.
+    //
+    // Handles the whole family rather than one radio's spelling: AM-D and
+    // FM-D are what this rig exposes, and USB-D/LSB-D exist on others by the
+    // same convention.
+    if (m.endsWith(QLatin1String("-D")))
+        m.chop(2);
+
     if      (m == "USB")  { mode = "SSB"; sub = "USB"; }
     else if (m == "LSB")  { mode = "SSB"; sub = "LSB"; }
-    else if (m == "CW" || m == "CWL" || m == "CWU") { mode = "CW"; }
+    // CWR and RTTYR are the REVERSE-sideband forms, and they are in this
+    // radio's own mode list (rigctl --dump-caps: "AM CW USB LSB RTTY FM CWR
+    // RTTYR D-STAR"). ADIF has no separate mode for reverse -- it is the
+    // same emission with the sidebands swapped -- so both fold into the
+    // base mode. Found by the FM-D test asserting CWR already worked; it
+    // did not, and the QSO was logged with no mode at all.
+    else if (m == "CW" || m == "CWL" || m == "CWU" || m == "CWR") { mode = "CW"; }
     else if (m == "AM"  || m == "SAM")              { mode = "AM"; }
     else if (m == "FM"  || m == "NFM" || m == "DFM") { mode = "FM"; }
-    else if (m == "RTTY")                           { mode = "RTTY"; }
+    else if (m == "RTTY" || m == "RTTYR")           { mode = "RTTY"; }
     // DIGU/DIGL/DIGI — leave empty so the entry form forces a pick (the
     // actual digital mode lives in the soundcard program, not in TCI).
     if (adifMode)    *adifMode = mode;

@@ -342,6 +342,21 @@ if(SHACKBOOK_TESTS)
     target_link_libraries(tci_discovery_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
     add_test(NAME tci_discovery_test COMMAND tci_discovery_test)
 
+    # Radio mode -> ADIF mapping. Fed by BOTH the TCI and rigctld paths,
+    # which speak different vocabularies -- an unmatched string yields an
+    # empty mode and a QSO logged without one. See issue #16.
+    add_executable(adif_mode_map_test
+        tests/adif_mode_map_test.cpp
+        src/LogbookModel.cpp
+        src/LogbookModel.h
+        src/AdifReader.cpp
+        src/AdifReader.h
+    )
+    target_include_directories(adif_mode_map_test PRIVATE src)
+    target_link_libraries(adif_mode_map_test PRIVATE
+        Qt6::Core Qt6::Sql Qt6::Network)
+    add_test(NAME adif_mode_map_test COMMAND adif_mode_map_test)
+
     add_executable(hamlib_riglist_test
         tests/hamlib_riglist_test.cpp
         src/HamlibRigList.cpp
