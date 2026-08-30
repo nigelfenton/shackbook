@@ -368,6 +368,7 @@ MainWindow::MainWindow(QWidget* parent)
     populateModeFilter();
     populateContestFilter();
     refreshStatusBar();
+    refreshLinkLabel();
 
     applyAutoConnectFromSettings();
     applyClusterConfigFromSettings();
@@ -405,8 +406,12 @@ void MainWindow::buildMenus()
     m_actLotw          = toolsMenu->addAction("&LoTW Upload…", this, &MainWindow::onShowLotw);
     toolsMenu->addSeparator();
     m_actFindRadios    = toolsMenu->addAction("&Find radios…",   this, &MainWindow::onFindRadios);
-    m_actConnectTci    = toolsMenu->addAction("&Connect TCI",    this, &MainWindow::onConnectTci);
-    m_actDisconnectTci = toolsMenu->addAction("&Disconnect TCI", this, &MainWindow::onDisconnectTci);
+    // NOT "Connect TCI". onConnectTci() routes to whichever source is
+    // configured, so naming it after one protocol left an operator using
+    // Hamlib with no menu item that looked like it applied to them. The
+    // text is refreshed with the link label. #14.
+    m_actConnectTci    = toolsMenu->addAction("&Connect radio",    this, &MainWindow::onConnectTci);
+    m_actDisconnectTci = toolsMenu->addAction("&Disconnect radio", this, &MainWindow::onDisconnectTci);
     toolsMenu->addSeparator();
     m_actAprsActivity  = toolsMenu->addAction("&APRS Activity…", this, &MainWindow::onShowAprsActivity);
     m_actDxcLog        = toolsMenu->addAction("DX Cluster &Log…", this, &MainWindow::onShowClusterLog);
@@ -541,7 +546,10 @@ void MainWindow::buildUI()
 
         m_tciDot    = new QLabel("●");
         m_tciDot->setStyleSheet(kTciDotDisconnected);
-        m_tciStatus = new QLabel("TCI offline");
+        // Text is set by refreshLinkLabel() once the configured source is
+        // known -- a literal here cannot be right, because it has to name
+        // TCI or CAT depending on a setting. #14.
+        m_tciStatus = new QLabel;
         m_tciStatus->setStyleSheet(kHeaderLabelStyle);
         // "TCI offline" is wider than "TCI live" — pin the width so the
         // dot doesn't slide left when we go online.
@@ -1098,6 +1106,36 @@ void MainWindow::onDeleteQso()
     }
 }
 
+// ONE place that decides what the link is called, so the header and the
+// status bar cannot disagree.
+//
+// This used to live inside onTciConnectionChanged(), which only fires on a
+// connection CHANGE -- so before the first attempt the label kept its
+// construction-time literal "TCI offline", even when the configured source
+// was rigctld and TCI was not in use at all. The operator saw a link named
+// after the protocol they were not using, which sends them to the wrong
+// settings page when something is not working. #14.
+void MainWindow::refreshLinkLabel()
+{
+    if (!m_tciStatus || !m_tciDot) return;
+    // Ask the LIVE clients rather than tracking a flag: this is called from
+    // startup and from a settings change as well as from the connection
+    // signal, and only two of those three carry a connected state.
+    const bool rig = usingRigctld();
+    const bool connected = rig ? (m_rigctld && m_rigctld->connected())
+                               : (m_tci && m_tci->connected());
+    const QString what = rig ? QStringLiteral("CAT") : QStringLiteral("TCI");
+    m_tciStatus->setText(what + (connected ? QStringLiteral(" live")
+                                           : QStringLiteral(" offline")));
+    m_tciDot->setStyleSheet(connected ? kTciDotConnected : kTciDotDisconnected);
+    // Same naming in the menu, from the same decision, so the two cannot
+    // drift apart.
+    if (m_actConnectTci)
+        m_actConnectTci->setText(tr("&Connect radio (%1)").arg(what));
+    if (m_actDisconnectTci)
+        m_actDisconnectTci->setText(tr("&Disconnect radio (%1)").arg(what));
+}
+
 void MainWindow::onSettings()
 {
     if (!m_model) return;
@@ -1117,6 +1155,8 @@ void MainWindow::onSettings()
         applyPotaConfigFromSettings();
         applyLookupConfigFromSettings();
         refreshStatusBar();
+        // The source may have changed from TCI to rigctld or back.
+        refreshLinkLabel();
     }
 }
 
@@ -1507,9 +1547,7 @@ void MainWindow::onTciConnectionChanged(bool connected)
     // Name the link that is actually in use — "TCI offline" while following a
     // radio over CAT is simply wrong, and sends the operator to the wrong
     // settings when something is not working.
-    const QString what = usingRigctld() ? QStringLiteral("CAT") : QStringLiteral("TCI");
-    m_tciStatus->setText(connected ? what + QStringLiteral(" live")
-                                   : what + QStringLiteral(" offline"));
+    refreshLinkLabel();
     refreshStatusBar();
     if (!connected) {
         // Don't clear cached freq/mode — keep them so a brief disconnect

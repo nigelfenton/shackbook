@@ -123,6 +123,10 @@ private:
     void populateModeFilter();
     void populateContestFilter();
     void refreshDupBadge();
+    // Name the link by the source actually configured (CAT vs TCI) and
+    // show whether it is up. Called from startup, a settings change and
+    // the connection signal -- see #14.
+    void refreshLinkLabel();
     void refreshStatusBar();
     // "ShackBook — G0JKN — 0.5.0-dev". Carries the version always, and the
     // -dev tag on any build that is not an installed release.
