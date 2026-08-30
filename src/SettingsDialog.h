@@ -37,6 +37,14 @@ private slots:
     // Say whether Hamlib is present, and what to do if it is not. Rerun
     // whenever the source or the configured path changes.
     void refreshHamlibGuidance();
+    // Fill the rig-model picker from the installed Hamlib, or the
+    // bundled fallback when it is absent. Rerun when the path changes.
+    void refreshRigModels();
+    // Re-read the serial ports. They come and go with USB cables, so
+    // this is read fresh rather than cached.
+    void refreshSerialPorts();
+    // Show the exact command to paste, built from the three pickers.
+    void refreshRigCommand();
 
 private:
     void buildUI();
@@ -57,6 +65,10 @@ private:
     QComboBox*   m_radioSource{};
     QLabel*      m_hamlibStatus{};
     QLineEdit*   m_rigctldPath{};
+    QComboBox*   m_rigModel{};
+    QComboBox*   m_rigPort{};
+    QComboBox*   m_rigBaud{};
+    QLabel*      m_rigCommand{};
     QPushButton* m_tciScan{};
     QLineEdit*  m_tciNickname{};
     QCheckBox*  m_tciAutoConnect{};

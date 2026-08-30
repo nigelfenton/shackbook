@@ -4,6 +4,9 @@
 #include "AetherSettingsReader.h"
 #include "TciClient.h"      // tciNicknameKey()
 #include "RigctldClient.h"   // rigctldNicknameKey()
+#include "HamlibRigList.h"
+
+#include <QSerialPortInfo>
 #include "TciDiscovery.h"
 
 #include <QComboBox>
@@ -125,6 +128,57 @@ void SettingsDialog::buildUI()
         "Where rigctld lives, if ShackBook cannot find it on its own.\n\n"
         "Leave blank to look in the usual places and on PATH.");
     tciL->addRow("rigctld program", m_rigctldPath);
+
+    // THE THREE THINGS rigctld NEEDS, none of which ShackBook used to help
+    // with: a model NUMBER, a port, and a baud rate. The operator had to
+    // find 3081 among 314 rigs, know which COM port the radio landed on
+    // (it drifts between sessions here), and know the baud from a radio
+    // menu. Issue #13.
+    m_rigModel = new QComboBox;
+    m_rigModel->setEditable(true);            // so it can be typed at, and searched
+    m_rigModel->setInsertPolicy(QComboBox::NoInsert);
+    m_rigModel->setToolTip(
+        "Your radio, as Hamlib knows it."
+        "This is the -m number rigctld wants. Type to search: \"9700\" finds "
+        "the IC-9700 without scrolling 300 rigs.");
+    tciL->addRow("Radio model", m_rigModel);
+
+    m_rigPort = new QComboBox;
+    m_rigPort->setEditable(true);             // a port can be typed if absent
+    m_rigPort->setInsertPolicy(QComboBox::NoInsert);
+    m_rigPort->setToolTip(
+        "The serial port the radio is on."
+        "Read from the system, with the adapter name shown, so you can tell "
+        "a radio from a mouse. Re-read each time this page opens, because "
+        "USB ports move.");
+    tciL->addRow("Serial port", m_rigPort);
+
+    m_rigBaud = new QComboBox;
+    m_rigBaud->setEditable(true);
+    m_rigBaud->setInsertPolicy(QComboBox::NoInsert);
+    for (const char* b : {"4800", "9600", "19200", "38400", "57600", "115200"})
+        m_rigBaud->addItem(QString::fromLatin1(b));
+    m_rigBaud->setCurrentText(QStringLiteral("19200"));
+    m_rigBaud->setToolTip(
+        "The radio's CAT baud rate."
+        "This is a setting in the RADIO's menu -- the port cannot report it. "
+        "It has to match, or rigctld connects and reads nothing.");
+    tciL->addRow("Baud", m_rigBaud);
+
+    // The whole point: a command that is READY, not a template with holes.
+    m_rigCommand = new QLabel;
+    m_rigCommand->setWordWrap(true);
+    m_rigCommand->setTextFormat(Qt::RichText);
+    m_rigCommand->setTextInteractionFlags(Qt::TextSelectableByMouse
+                                          | Qt::TextSelectableByKeyboard);
+    tciL->addRow(QString(), m_rigCommand);
+
+    connect(m_rigModel, &QComboBox::currentTextChanged, this,
+            &SettingsDialog::refreshRigCommand);
+    connect(m_rigPort, &QComboBox::currentTextChanged, this,
+            &SettingsDialog::refreshRigCommand);
+    connect(m_rigBaud, &QComboBox::currentTextChanged, this,
+            &SettingsDialog::refreshRigCommand);
 
     m_tciScan = new QPushButton("Find radios…");
     m_tciScan->setToolTip(
@@ -327,10 +381,37 @@ void SettingsDialog::populate()
             [this, loadEndpoint](int) {
                 loadEndpoint();
                 refreshHamlibGuidance();
+                refreshRigCommand();
             });
     connect(m_rigctldPath, &QLineEdit::textChanged, this,
-            [this](const QString&) { refreshHamlibGuidance(); });
+            [this](const QString&) {
+                refreshHamlibGuidance();
+                // A new path can mean a different Hamlib with a
+                // different catalogue, so the list is re-read too.
+                refreshRigModels();
+                refreshRigCommand();
+            });
     refreshHamlibGuidance();
+    refreshRigModels();
+    refreshSerialPorts();
+    // Restore the operator's stored choices AFTER the lists exist.
+    {
+        const QString m = m_model->settingValue("HAMLIB_RIG_MODEL");
+        if (!m.isEmpty()) {
+            const int at = m_rigModel->findData(m);
+            if (at >= 0) m_rigModel->setCurrentIndex(at);
+            else         m_rigModel->setCurrentText(m);
+        }
+        const QString prt = m_model->settingValue("HAMLIB_RIG_PORT");
+        if (!prt.isEmpty()) {
+            const int at = m_rigPort->findData(prt);
+            if (at >= 0) m_rigPort->setCurrentIndex(at);
+            else         m_rigPort->setCurrentText(prt);
+        }
+        const QString b = m_model->settingValue("HAMLIB_RIG_BAUD");
+        if (!b.isEmpty()) m_rigBaud->setCurrentText(b);
+    }
+    refreshRigCommand();
     m_tciAutoConnect->setChecked(m_model->settingValue("TCI_AUTOCONNECT", "1") == "1");
     m_spotTunes->setChecked(m_model->settingValue("SPOT_DOUBLECLICK_TUNES", "0") == "1");
     m_spotSetsMode->setChecked(m_model->settingValue("SPOT_DOUBLECLICK_SETS_MODE", "1") == "1");
@@ -452,6 +533,112 @@ void SettingsDialog::refreshHamlibGuidance()
             .arg(found.toHtmlEscaped()));
 }
 
+// Kept together: the same events -- source changed, path changed, dialog
+// opened -- have to update all four, and splitting them is how one gets
+// forgotten.
+void SettingsDialog::refreshRigModels()
+{
+    const QString found = RigctldClient::findRigctld(m_rigctldPath->text());
+    bool usedFallback = false;
+    const QList<HamlibRigList::Rig> rigs = HamlibRigList::best(found, &usedFallback);
+
+    // Keep what the operator already chose. Repopulating must not silently
+    // reselect a different radio underneath them.
+    const QString previous = m_rigModel->currentText();
+    m_rigModel->clear();
+    for (const HamlibRigList::Rig& r : rigs)
+        m_rigModel->addItem(r.label(), r.model);
+    if (!previous.isEmpty()) {
+        const int at = m_rigModel->findText(previous);
+        if (at >= 0) m_rigModel->setCurrentIndex(at);
+        else         m_rigModel->setCurrentText(previous);
+    }
+
+    // SAY WHICH LIST THIS IS. A partial bundled list presented as the whole
+    // catalogue would send someone hunting for a radio that is not in it.
+    m_rigModel->setToolTip(usedFallback
+        ? tr("A SHORT BUILT-IN LIST -- Hamlib is not installed, so its full "
+             "catalogue is unavailable. Install Hamlib to pick from all of "
+             "them, or type the model number if you know it.")
+        : tr("Your radio, as the installed Hamlib knows it (%1 rigs). "
+             "This is the -m number rigctld wants. Type to search.")
+              .arg(rigs.size()));
+}
+
+void SettingsDialog::refreshSerialPorts()
+{
+    const QString previous = m_rigPort->currentText();
+    m_rigPort->clear();
+    const auto ports = QSerialPortInfo::availablePorts();
+    for (const QSerialPortInfo& info : ports) {
+        // "COM19 -- Silicon Labs CP210x". The description is what lets an
+        // operator tell the radio from a mouse; the port name alone does not.
+        const QString desc = info.description().isEmpty()
+                                 ? info.manufacturer()
+                                 : info.description();
+        m_rigPort->addItem(desc.isEmpty()
+                               ? info.portName()
+                               : QStringLiteral("%1 - %2").arg(info.portName(), desc),
+                           info.portName());
+    }
+    if (ports.isEmpty())
+        m_rigPort->addItem(tr("(no serial ports found)"), QString());
+    if (!previous.isEmpty()) {
+        const int at = m_rigPort->findText(previous);
+        if (at >= 0) m_rigPort->setCurrentIndex(at);
+        else         m_rigPort->setCurrentText(previous);
+    }
+}
+
+void SettingsDialog::refreshRigCommand()
+{
+    if (!m_rigCommand) return;
+    const bool rig =
+        m_radioSource->currentData().toString() == QLatin1String("rigctld");
+    m_rigModel->setVisible(rig);
+    m_rigPort->setVisible(rig);
+    m_rigBaud->setVisible(rig);
+    m_rigCommand->setVisible(rig);
+    if (!rig) return;
+
+    // The model NUMBER, not the label. userData holds it for a chosen row;
+    // a typed entry may be the bare number itself.
+    const int idx = m_rigModel->currentIndex();
+    QString model = idx >= 0 ? m_rigModel->itemData(idx).toString() : QString();
+    if (model.isEmpty()) {
+        bool ok = false;
+        const int typed = m_rigModel->currentText().trimmed().toInt(&ok);
+        if (ok && typed > 0) model = QString::number(typed);
+    }
+
+    const int portIdx = m_rigPort->currentIndex();
+    QString port = portIdx >= 0 ? m_rigPort->itemData(portIdx).toString() : QString();
+    if (port.isEmpty()) port = m_rigPort->currentText().trimmed();
+
+    const QString baud = m_rigBaud->currentText().trimmed();
+
+    if (model.isEmpty() || port.isEmpty()) {
+        m_rigCommand->setStyleSheet("QLabel { color: #6b8099; font-size: 11px; }");
+        m_rigCommand->setText(tr(
+            "Pick a radio model and a serial port, and the exact command to "
+            "run will appear here."));
+        return;
+    }
+
+    const QString exe = RigctldClient::findRigctld(m_rigctldPath->text());
+    const QString program = exe.isEmpty() ? QStringLiteral("rigctld") : exe;
+    const QString cmd = QStringLiteral("\"%1\" -m %2 -r %3%4")
+                            .arg(program, model, port,
+                                 baud.isEmpty() ? QString()
+                                                : QStringLiteral(" -s ") + baud);
+
+    m_rigCommand->setStyleSheet("QLabel { color: #6b8099; font-size: 11px; }");
+    m_rigCommand->setText(tr(
+        "Run this, and leave it running:<br><code>%1</code><br>"
+        "ShackBook talks to it on port 4532; it does not start it, so nothing "
+        "else loses the serial port.").arg(cmd.toHtmlEscaped()));
+}
+
 void SettingsDialog::onScanForRadios()
 {
     // Sweep loopback plus whatever host is TYPED in the box right now — the
@@ -540,6 +727,23 @@ void SettingsDialog::onAccept()
     m_model->setSetting(rig ? "RIGCTLD_HOST" : "TCI_HOST", host);
     m_model->setSetting(rig ? "RIGCTLD_PORT" : "TCI_PORT", port);
     m_model->setSetting("HAMLIB_RIGCTLD_PATH", m_rigctldPath->text().trimmed());
+    {
+        // Store the NUMBER, never the label: the label changes with the
+        // Hamlib version, the number does not.
+        const int mi = m_rigModel->currentIndex();
+        QString model = mi >= 0 ? m_rigModel->itemData(mi).toString() : QString();
+        if (model.isEmpty()) {
+            bool ok = false;
+            const int typed = m_rigModel->currentText().trimmed().toInt(&ok);
+            if (ok && typed > 0) model = QString::number(typed);
+        }
+        m_model->setSetting("HAMLIB_RIG_MODEL", model);
+        const int pi = m_rigPort->currentIndex();
+        QString port = pi >= 0 ? m_rigPort->itemData(pi).toString() : QString();
+        if (port.isEmpty()) port = m_rigPort->currentText().trimmed();
+        m_model->setSetting("HAMLIB_RIG_PORT", port);
+        m_model->setSetting("HAMLIB_RIG_BAUD", m_rigBaud->currentText().trimmed());
+    }
     m_model->setSetting("TCI_AUTOCONNECT",  m_tciAutoConnect->isChecked() ? "1" : "0");
     m_model->setSetting("SPOT_DOUBLECLICK_TUNES",    m_spotTunes->isChecked() ? "1" : "0");
     m_model->setSetting("SPOT_DOUBLECLICK_SETS_MODE", m_spotSetsMode->isChecked() ? "1" : "0");

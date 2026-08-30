@@ -25,6 +25,7 @@ find_package(Qt6 6.2 REQUIRED COMPONENTS
     Widgets
     Sql
     Network
+    SerialPort
     WebSockets
 )
 
@@ -39,6 +40,8 @@ set(SHACKBOOK_SOURCES
     src/TciDiscovery.h
     src/RigctldClient.cpp
     src/RigctldClient.h
+    src/HamlibRigList.cpp
+    src/HamlibRigList.h
     src/LogbookModel.cpp
     src/LogbookModel.h
     src/AdifReader.cpp
@@ -142,6 +145,7 @@ target_link_libraries(ShackBook PRIVATE
     Qt6::Gui
     Qt6::Widgets
     Qt6::Sql
+    Qt6::SerialPort
     Qt6::WebSockets
 )
 
@@ -337,6 +341,17 @@ if(SHACKBOOK_TESTS)
     target_include_directories(tci_discovery_test PRIVATE src)
     target_link_libraries(tci_discovery_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
     add_test(NAME tci_discovery_test COMMAND tci_discovery_test)
+
+    add_executable(hamlib_riglist_test
+        tests/hamlib_riglist_test.cpp
+        src/HamlibRigList.cpp
+        src/HamlibRigList.h
+        src/RigctldClient.cpp
+        src/RigctldClient.h
+    )
+    target_include_directories(hamlib_riglist_test PRIVATE src)
+    target_link_libraries(hamlib_riglist_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME hamlib_riglist_test COMMAND hamlib_riglist_test)
 
     add_executable(hamlib_detect_test
         tests/hamlib_detect_test.cpp
