@@ -106,6 +106,30 @@ int main(int argc, char** argv)
     checkMode(" CW ",  14.030, "cw");
     checkMode("Usb",    3.780, "usb");
 
+    // ── N3FJP scoring buckets ──────────────────────────────────────────
+    // A logger forwarding a spot sends its bucket (PH/CW/DG), not always the
+    // real mode. PH is phone and resolves exactly like SSB; before this it
+    // matched nothing, so the radio moved frequency and stayed in whatever
+    // mode it was already in — tuned to the DX, listening wrong.
+    checkMode("PH",     7.200, "lsb");
+    checkMode("PH",    14.250, "usb");
+    checkMode("ph",     3.900, "lsb");
+    checkMode("PHONE", 21.300, "usb");
+    checkMode("CW",     7.030, "cw");     // already worked; pinned so it stays
+    // DG is deliberately NOT mapped: it covers FT8, RTTY, PSK and more, which
+    // need different sidebands and different software. Guessing is worse than
+    // leaving the radio alone.
+    checkMode("DG",    14.070, "");
+
+    // ── 60 m via the bucket, and the band edges ────────────────────────
+    // The sideband window (5.25) is deliberately NARROWER than the band
+    // table's 60 m row (5.06): the table names a QSO's band, this aims a
+    // transmitter. 5.06-5.25 is not a 60 m allocation anywhere.
+    checkMode("PH",     5.358, "usb");    // US channel 60 m, via the bucket
+    checkMode("SSB",    5.403, "usb");    // top US channel
+    checkMode("SSB",    5.100, "lsb");    // inside the band TABLE, outside 60 m
+    checkMode("SSB",    5.500, "lsb");    // above 60 m, below 10 MHz: LSB again
+
     // ── Guards on the client itself ────────────────────────────────────
     // A disconnected client must send nothing: the spot list is visible
     // whether or not a radio is attached, so double-clicking with nothing
