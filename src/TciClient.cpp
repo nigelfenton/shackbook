@@ -188,12 +188,30 @@ QString tciModulationForAdifMode(const QString& adifMode, double currentMhz)
     // convention (and by regulation in most countries). A plain "< 10 MHz
     // means LSB" rule puts the radio on the wrong sideband for the whole band.
     const auto upperSideband = [](double mhz) -> bool {
+        // 5.25 is the WRC-15 band edge (5.2515), NOT the 5.06 that
+        // LogbookModel::bandFromFreqMhz uses for the same band. The two are
+        // deliberately different: the band table is a wide ADIF-style bucket
+        // that only has to name a QSO's band, while this decides what sideband
+        // to put a transmitter on. Nothing between 5.06 and 5.25 is a 60 m
+        // amateur allocation anywhere.
         if (mhz >= 5.25 && mhz <= 5.45) return true;   // 60 m: USB despite the frequency
         return mhz >= 10.0;
     };
 
     // SSB is not a sideband. Resolve it by frequency, or not at all.
-    if (key == QLatin1String("SSB")) {
+    // N3FJP sends a SCORING BUCKET (PH / CW / DG) alongside the real mode,
+    // and a spot forwarded from a logger often carries only the bucket. "PH"
+    // is phone, which is the same question SSB asks - resolve it by frequency.
+    // "DG" is deliberately absent: it covers FT8, RTTY, PSK and a dozen others
+    // that need different sidebands and different software, so it is exactly
+    // the ambiguous case this function refuses rather than guesses at. "CW"
+    // needs no special case; it is already in the map and means one thing.
+    //
+    // Without this a phone spot from a logger matched nothing, setModeString()
+    // returned false, and the radio stayed on whatever mode it was already in
+    // while the frequency moved - tuned to the DX, listening in the wrong mode.
+    if (key == QLatin1String("SSB") || key == QLatin1String("PH")
+        || key == QLatin1String("PHONE")) {
         if (!(currentMhz > 0.0)) return {};
         return upperSideband(currentMhz) ? QStringLiteral("usb")
                                          : QStringLiteral("lsb");
