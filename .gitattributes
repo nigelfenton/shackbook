@@ -1,0 +1,45 @@
+# Line-ending policy.
+#
+# WHY THIS EXISTS: every tracked text file in this repo is currently stored
+# with DOUBLED line endings (\r\r\n). They were committed containing CRLF,
+# and `core.autocrlf=true` on a Windows clone then converts the \n again on
+# checkout, giving \r\r\n in the working tree. MSVC reports the stray CR as
+#     warning C4335: Mac file format detected
+# on essentially every file, on every build.
+#
+# This file fixes the policy going FORWARD: `text=auto` tells git to store
+# these types with LF in the object database and convert on checkout, so new
+# and re-added files stop compounding.
+#
+# It does NOT fix the 102 files already stored wrong -- that needs a
+# one-shot `git add --renormalize .`, which touches every file in the repo
+# and so wants its own commit on a quiet day, not one mixed in with feature
+# work. Tracked as an issue; see the repo issue list for "line endings".
+
+*                text=auto
+
+# Explicit for the source we compile, so this survives someone narrowing the
+# catch-all above.
+*.cpp            text
+*.h              text
+*.md             text
+*.txt            text
+*.cmake          text
+*.yml            text
+*.py             text
+*.dat            text
+
+# Shell scripts must keep LF even on Windows checkouts -- a CR in a shebang
+# line makes the interpreter path unrunnable.
+*.sh             text eol=lf
+
+# Windows batch files need CRLF; a lone LF can break `goto` and label parsing
+# in cmd.exe.
+*.bat            text eol=crlf
+
+# Binary -- never touch these.
+*.png            binary
+*.jpg            binary
+*.ico            binary
+*.qm             binary
+*.db             binary
