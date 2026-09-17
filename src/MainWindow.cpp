@@ -886,7 +886,7 @@ void MainWindow::onSaveQso()
     q.myCall       = m_model->myCall();
     q.myGridsquare = m_model->myGridsquare();
     q.myState      = m_model->myState();
-    q.txPwr        = m_model->defaultTxPwr();
+    q.txPwr        = txPowerForNewQso();
     q.station      = currentRadioName();   // blank unless TCI is connected
 
     if (m_model->contestMode()) {
@@ -1082,7 +1082,7 @@ void MainWindow::onNewQso()
     q.myCall       = m_model->myCall();
     q.myGridsquare = m_model->myGridsquare();
     q.myState      = m_model->myState();
-    q.txPwr        = m_model->defaultTxPwr();
+    q.txPwr        = txPowerForNewQso();   // prefilled; the dialog can change it
     q.station      = currentRadioName();   // blank unless TCI is connected
     EditDialog dlg(m_model, q, this);
     dlg.exec();
@@ -2095,6 +2095,21 @@ QString MainWindow::currentRadioName() const
     if (!nick.isEmpty()) return nick;
 
     return m_tci->deviceName().trimmed();
+}
+
+double MainWindow::txPowerForNewQso() const
+{
+    // #23: log what the radio measured rather than a number typed once in
+    // Settings. Only TCI reports it; rigctld and a disconnected radio keep the
+    // default, as does an operator who has switched the feature off. The
+    // measured value is the radio's forward power — with an amplifier in line
+    // it is the drive level (see the Settings tooltip).
+    if (m_model->settingValue("TX_PWR_FROM_RADIO", "1") == "1"
+        && m_tci && m_tci->connected()) {
+        if (const auto w = m_tci->measuredTxPowerW())
+            return *w;
+    }
+    return m_model->defaultTxPwr();
 }
 
 // ── Status bar ───────────────────────────────────────────────────────────

@@ -36,6 +36,8 @@ set(SHACKBOOK_SOURCES
     src/MainWindow.h
     src/TciClient.cpp
     src/TciClient.h
+    src/TxPowerTracker.cpp
+    src/TxPowerTracker.h
     src/TciDiscovery.cpp
     src/TciDiscovery.h
     src/RigctldClient.cpp
@@ -293,10 +295,25 @@ if(SHACKBOOK_TESTS)
         tests/tci_tune_test.cpp
         src/TciClient.cpp
         src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
     )
     target_include_directories(tci_tune_test PRIVATE src)
     target_link_libraries(tci_tune_test PRIVATE Qt6::Core Qt6::WebSockets)
     add_test(NAME tci_tune_test COMMAND tci_tune_test)
+
+    # Measured TX power (#23): the tracker's rules, and TciClient parsing
+    # tx_sensors/trx against a loopback fake TCI server.
+    add_executable(tx_power_test
+        tests/tx_power_test.cpp
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+        src/TciClient.cpp
+        src/TciClient.h
+    )
+    target_include_directories(tx_power_test PRIVATE src)
+    target_link_libraries(tx_power_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
+    add_test(NAME tx_power_test COMMAND tx_power_test)
 
     add_executable(contest_county_test
         tests/contest_county_test.cpp
@@ -339,6 +356,8 @@ if(SHACKBOOK_TESTS)
         src/TciDiscovery.h
         src/TciClient.cpp
         src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
     )
     target_include_directories(tci_discovery_test PRIVATE src)
     target_link_libraries(tci_discovery_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)

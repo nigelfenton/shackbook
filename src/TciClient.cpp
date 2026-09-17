@@ -29,6 +29,7 @@ TciClient::TciClient(QObject* parent)
       m_reconnectTimer(new QTimer(this))
 {
     m_reconnectTimer->setSingleShot(true);
+    m_clock.start();
 
     connect(m_socket, &QWebSocket::connected,        this, &TciClient::onConnected);
     connect(m_socket, &QWebSocket::disconnected,     this, &TciClient::onDisconnected);
@@ -101,6 +102,10 @@ void TciClient::onConnected()
     // AetherSDR, ExpertSDR2, and SunSDR-mb1.  Servers ignore unknown
     // commands.  We do NOT also send `iq_start;` etc — we don't want IQ.
     send("start;");
+    // Transmit sensor readings (forward power, SWR) for logging the power a
+    // QSO was actually made at (#23). Opt-in on AetherSDR; ignored by servers
+    // that do not have them.
+    send("tx_sensors_enable:true;");
 }
 
 void TciClient::onDisconnected()
@@ -111,6 +116,13 @@ void TciClient::onDisconnected()
     if (!m_device.isEmpty()) {
         m_device.clear();
         emit deviceNameChanged(m_device);
+    }
+    // Readings from before the drop may belong to a different radio or a
+    // long-gone transmission; never log them against a new contact.
+    m_txPower.reset();
+    if (m_transmitting) {
+        m_transmitting = false;
+        emit transmittingChanged(false);
     }
     setConnected(false);
     if (!m_userInitiatedDisconnect) {
@@ -304,9 +316,47 @@ void TciClient::parseLine(const QString& line)
                 emit frequencyChanged(m_freqMhz);
             }
         }
+    } else if (cmd == "trx" && args.size() >= 2) {
+        // trx:rx,true|false — transmit state of TRX 0.
+        if (args[0].trimmed() == "0") {
+            const bool on = args[1].trimmed().compare(QLatin1String("true"),
+                                                      Qt::CaseInsensitive) == 0;
+            m_txPower.setTransmitting(on, m_clock.elapsed());
+            if (on != m_transmitting) {
+                m_transmitting = on;
+                emit transmittingChanged(on);
+            }
+        }
+    } else if (cmd == "tune" && args.size() >= 2) {
+        // tune:rx,true|false — a tune carrier, whose power must not be logged
+        // as a QSO's. ExpertSDR sends this; AetherSDR (as of 2026-09) does
+        // not, so on AetherSDR a tune looks like any other transmission.
+        if (args[0].trimmed() == "0") {
+            m_txPower.setTuning(args[1].trimmed().compare(QLatin1String("true"),
+                                                          Qt::CaseInsensitive) == 0);
+        }
+    } else if ((cmd == "tx_sensors" || cmd == "tx_sensor") && args.size() >= 5) {
+        // tx_sensors:trx,mic_dbm,fwd_watts,peak_watts,swr[,alc_dbfs...]
+        // Read by position; AetherSDR appends extra fields after swr. Both
+        // spellings are accepted because TCI documents and servers differ.
+        if (args[0].trimmed() == "0") {
+            bool okFwd = false, okSwr = false;
+            const double fwd = args[2].trimmed().toDouble(&okFwd);
+            const double swr = args[4].trimmed().toDouble(&okSwr);
+            if (okFwd) {
+                m_txPower.addForwardPower(fwd, m_clock.elapsed());
+                emit txSensorsReceived(fwd, okSwr ? swr : 0.0);
+            }
+        }
     }
-    // Other events (trx, drive, rit, xit, sql, ...) intentionally ignored
-    // — we only need freq + mode for the logbook.
+    // Other events (drive, rit, xit, sql, ...) intentionally ignored.
+}
+
+std::optional<double> TciClient::measuredTxPowerW() const
+{
+    const auto w = m_txPower.recentPeakWatts(m_clock.elapsed());
+    if (!w) return std::nullopt;
+    return TxPowerTracker::roundForLog(*w);
 }
 
 void TciClient::scheduleReconnect()

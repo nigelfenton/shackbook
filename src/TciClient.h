@@ -16,9 +16,14 @@
 // exponential backoff (1, 2, 5, 10, 30 s) until the user explicitly calls
 // disconnectFromServer().
 
+#include "TxPowerTracker.h"
+
+#include <QElapsedTimer>
 #include <QObject>
 #include <QString>
 #include <QUrl>
+
+#include <optional>
 
 class QWebSocket;
 class QTimer;
@@ -85,6 +90,20 @@ public:
     // is why a user-set nickname overrides this when attributing a QSO.
     QString deviceName()            const { return m_device; }
 
+    // ── Measured transmit power (#23) ─────────────────────────────────
+    //
+    // On connect the client asks for transmit sensor readings
+    // (`tx_sensors_enable:true;`); a server that does not support them
+    // ignores the request. The value is the peak forward power of the most
+    // recent transmission, if that is still going or ended within the last
+    // two minutes — see TxPowerTracker for the rules. Empty means "nothing
+    // trustworthy measured": use the configured default instead.
+    //
+    // ⚠ It is the RADIO's forward power. With an external amplifier in line
+    // that is the drive level, not the power at the antenna.
+    std::optional<double> measuredTxPowerW() const;
+    bool transmitting() const { return m_transmitting; }
+
     // ── Tuning ────────────────────────────────────────────────────────
     //
     // Until now this client was read-only: it followed the radio so a QSO
@@ -111,6 +130,9 @@ signals:
     void modeChanged(const QString& mode);
     void serverInfoChanged(const QString& name, const QString& version);
     void deviceNameChanged(const QString& device);
+    void transmittingChanged(bool transmitting);
+    // Forward power (W) and SWR from a `tx_sensors:` reading on TRX 0.
+    void txSensorsReceived(double forwardWatts, double swr);
     // Diagnostic — every line received, after stripping the trailing ';'.
     void rawMessageReceived(const QString& line);
 
@@ -143,6 +165,10 @@ private:
     QString m_protoVersion;
     QString m_device;
     QString m_lastError;
+
+    bool           m_transmitting{false};
+    TxPowerTracker m_txPower;
+    QElapsedTimer  m_clock;   // monotonic time for TxPowerTracker
 };
 
 } // namespace ShackBook
