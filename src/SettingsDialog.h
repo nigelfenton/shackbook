@@ -57,6 +57,7 @@ private:
     QLineEdit*  m_myGrid{};
     QLineEdit*  m_myState{};
     QDoubleSpinBox* m_defaultTxPwr{};
+    QCheckBox*      m_txPwrFromRadio{};
     QLineEdit*  m_myOperator{};
 
     // TCI

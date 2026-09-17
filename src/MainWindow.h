@@ -136,6 +136,9 @@ private:
     // the TCI-announced device name → empty. Empty when not connected, so an
     // offline QSO is left unattributed rather than credited to the last radio.
     QString currentRadioName() const;
+    // TX power for a new QSO: the radio's measured power when TCI supplies
+    // one and the operator has not turned that off, otherwise the default.
+    double  txPowerForNewQso() const;
     void applyAutoConnectFromSettings();
     void applyClusterConfigFromSettings();
     void applyPotaConfigFromSettings();

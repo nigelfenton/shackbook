@@ -75,11 +75,26 @@ void SettingsDialog::buildUI()
     m_defaultTxPwr->setRange(0.0, 99999.0);
     m_defaultTxPwr->setDecimals(1);
     m_defaultTxPwr->setSuffix(" W");
+    m_txPwrFromRadio = new QCheckBox("Use the power measured by the radio (TCI) when available");
+    m_txPwrFromRadio->setToolTip(
+        "Logs the peak forward power of your last transmission (within 2 minutes)
+"
+        "instead of the default. Falls back to the default when nothing was measured,
+"
+        "or with rigctld.
+
+"
+        "This is the radio's own output: with an amplifier in line it is the drive
+"
+        "power, not the power at the antenna. A tune carrier on AetherSDR counts as
+"
+        "a transmission, so key up after tuning before logging.");
     m_myOperator   = new QLineEdit;
     opL->addRow("My call",       m_myCall);
     opL->addRow("My grid",       m_myGrid);
     opL->addRow("My state",      m_myState);
     opL->addRow("Default power", m_defaultTxPwr);
+    opL->addRow("",              m_txPwrFromRadio);
     opL->addRow("Operator",      m_myOperator);
     tabs->addTab(op, "Operator");
 
@@ -355,6 +370,7 @@ void SettingsDialog::populate()
     m_myGrid->setText(m_model->myGridsquare());
     m_myState->setText(m_model->myState());
     m_defaultTxPwr->setValue(m_model->defaultTxPwr());
+    m_txPwrFromRadio->setChecked(m_model->settingValue("TX_PWR_FROM_RADIO", "1") == "1");
     m_myOperator->setText(m_model->settingValue("MY_OPERATOR"));
 
     {
@@ -712,6 +728,7 @@ void SettingsDialog::onAccept()
     m_model->setSetting("MY_GRIDSQUARE",    m_myGrid->text().trimmed());
     m_model->setSetting("MY_STATE",         m_myState->text().trimmed().toUpper());
     m_model->setSetting("DEFAULT_TX_PWR",   QString::number(m_defaultTxPwr->value(), 'f', 1));
+    m_model->setSetting("TX_PWR_FROM_RADIO", m_txPwrFromRadio->isChecked() ? "1" : "0");
     m_model->setSetting("MY_OPERATOR",      m_myOperator->text().trimmed().toUpper());
 
     const QString source = m_radioSource->currentData().toString();
