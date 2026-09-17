@@ -38,6 +38,12 @@ set(SHACKBOOK_SOURCES
     src/TciClient.h
     src/TxPowerTracker.cpp
     src/TxPowerTracker.h
+    src/MqttPacket.cpp
+    src/MqttPacket.h
+    src/MqttPublisher.cpp
+    src/MqttPublisher.h
+    src/ShackStatus.cpp
+    src/ShackStatus.h
     src/TciDiscovery.cpp
     src/TciDiscovery.h
     src/RigctldClient.cpp
@@ -314,6 +320,21 @@ if(SHACKBOOK_TESTS)
     target_include_directories(tx_power_test PRIVATE src)
     target_link_libraries(tx_power_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
     add_test(NAME tx_power_test COMMAND tx_power_test)
+
+    # MQTT shack status (#24): packet bytes, HA discovery, and the publisher
+    # against a loopback fake broker.
+    add_executable(mqtt_test
+        tests/mqtt_test.cpp
+        src/MqttPacket.cpp
+        src/MqttPacket.h
+        src/MqttPublisher.cpp
+        src/MqttPublisher.h
+        src/ShackStatus.cpp
+        src/ShackStatus.h
+    )
+    target_include_directories(mqtt_test PRIVATE src)
+    target_link_libraries(mqtt_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME mqtt_test COMMAND mqtt_test)
 
     add_executable(contest_county_test
         tests/contest_county_test.cpp
