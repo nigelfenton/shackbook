@@ -1,0 +1,90 @@
+# ShackBook tests: build everything and run the unit tests on every push to
+# main and every pull request.
+#
+# WHY THIS EXISTS: release.yml only runs on v* tags and never builds or runs
+# the tests. When Qt SerialPort became a required component (e690440,
+# 2026-08-30) and CI didn't install it, every build failed at Configure for
+# two weeks without anyone noticing (#21). This job fails fast instead. It
+# builds no release packages. See #22.
+#
+# The registered tests link only Qt Core/Network/Sql/WebSockets and stand up
+# their own localhost servers: no display, no radio, no Hamlib needed.
+# rigctld_live_probe is deliberately not add_test'd (it needs a real rigctld).
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: '6.8.0'                        # keep in step with release.yml
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  QT_QPA_PLATFORM: offscreen                 # belt and braces: nothing here should open a window
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              ninja-build build-essential libgl1-mesa-dev libxkbcommon-dev
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: linux
+          target: desktop
+          arch: linux_gcc_64
+          modules: 'qtwebsockets qtserialport'
+          cache: true
+
+      - name: Configure
+        run: cmake -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKBOOK_TESTS=ON
+
+      - name: Build
+        run: cmake --build build-tests
+
+      - name: Test
+        # Serial on purpose: several tests bind localhost ports.
+        run: ctest --test-dir build-tests --output-on-failure
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: 'qtwebsockets qtserialport'
+          cache: true
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+
+      - name: Configure
+        run: cmake -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=Release -DSHACKBOOK_TESTS=ON
+
+      - name: Build
+        run: cmake --build build-tests
+
+      - name: Test
+        run: ctest --test-dir build-tests --output-on-failure
