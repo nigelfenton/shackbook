@@ -138,9 +138,15 @@ QVector<DiscoveryMessage> discoveryMessages(const QString& topicPrefix,
                 c.insert(QStringLiteral("device_class"), QStringLiteral("connectivity"));
         }
         if (object == QLatin1String("frequency")) {
+            // The TOPIC stays in whole Hz (exact, and what an automation wants
+            // to compare). HA is told to SHOW MHz by converting in a template.
+            // Not `suggested_unit_of_measurement`: HA's MQTT sensor does not
+            // accept it and ignored it silently, so the first live run showed
+            // "10,000,000.000 Hz".
             c.insert(QStringLiteral("device_class"), QStringLiteral("frequency"));
-            c.insert(QStringLiteral("unit_of_measurement"), QStringLiteral("Hz"));
-            c.insert(QStringLiteral("suggested_unit_of_measurement"), QStringLiteral("MHz"));
+            c.insert(QStringLiteral("unit_of_measurement"), QStringLiteral("MHz"));
+            c.insert(QStringLiteral("value_template"),
+                     QStringLiteral("{{ (value | float(0) / 1000000) | round(6) }}"));
             c.insert(QStringLiteral("suggested_display_precision"), 3);
         }
         if (object == QLatin1String("count_today")) {

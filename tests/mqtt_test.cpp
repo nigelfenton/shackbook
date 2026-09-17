@@ -162,6 +162,7 @@ void status()
     bool allValid = !withQso.isEmpty(), oneDevice = true, availability = true;
     QString deviceId;
     bool sawTx = false, sawFreqClass = false;
+    bool freqUnitMhz = false, freqTemplateConverts = false, freqNoUnsupportedKey = false;
     for (const auto& m : withQso) {
         const QJsonDocument d = QJsonDocument::fromJson(m.payload);
         if (!d.isObject()) { allValid = false; continue; }
@@ -176,12 +177,23 @@ void status()
         if (c.value("unique_id").toString() == QStringLiteral("shackbook_g0jkn_frequency")
             && c.value("device_class").toString() == QStringLiteral("frequency"))
             sawFreqClass = true;
+        if (c.value("unique_id").toString() == QStringLiteral("shackbook_g0jkn_frequency")) {
+            // First live run (2026-09-17) showed "10,000,000.000 Hz": HA's MQTT
+            // sensor ignores suggested_unit_of_measurement. Display MHz via the
+            // unit + a template that converts the Hz payload.
+            freqUnitMhz = c.value("unit_of_measurement").toString() == QStringLiteral("MHz");
+            freqTemplateConverts = c.value("value_template").toString().contains(QStringLiteral("1000000"));
+            freqNoUnsupportedKey = !c.contains(QStringLiteral("suggested_unit_of_measurement"));
+        }
     }
     check(allValid, "discovery: every config is a JSON object");
     check(oneDevice && deviceId == QStringLiteral("shackbook_g0jkn"), "discovery: all entities share one device");
     check(availability, "discovery: every entity uses the availability topic");
     check(sawTx, "discovery: transmitting binary_sensor at the HA topic, reading radio/transmitting");
     check(sawFreqClass, "discovery: frequency has device_class frequency");
+    check(freqUnitMhz, "discovery: frequency is shown in MHz");
+    check(freqTemplateConverts, "discovery: frequency template converts the Hz payload to MHz");
+    check(freqNoUnsupportedKey, "discovery: no suggested_unit_of_measurement (HA's MQTT sensor ignores it)");
 
     const auto noQso = discoveryMessages(QStringLiteral("shackbook/g0jkn"), QStringLiteral("G0JKN"), {}, false);
     bool lastQsoDeleted = false;
