@@ -77,17 +77,11 @@ void SettingsDialog::buildUI()
     m_defaultTxPwr->setSuffix(" W");
     m_txPwrFromRadio = new QCheckBox("Use the power measured by the radio (TCI) when available");
     m_txPwrFromRadio->setToolTip(
-        "Logs the peak forward power of your last transmission (within 2 minutes)
-"
-        "instead of the default. Falls back to the default when nothing was measured,
-"
-        "or with rigctld.
-
-"
-        "This is the radio's own output: with an amplifier in line it is the drive
-"
-        "power, not the power at the antenna. A tune carrier on AetherSDR counts as
-"
+        "Logs the peak forward power of your last transmission (within 2 minutes)\n"
+        "instead of the default. Falls back to the default when nothing was measured,\n"
+        "or with rigctld.\n\n"
+        "This is the radio's own output: with an amplifier in line it is the drive\n"
+        "power, not the power at the antenna. A tune carrier on AetherSDR counts as\n"
         "a transmission, so key up after tuning before logging.");
     m_myOperator   = new QLineEdit;
     opL->addRow("My call",       m_myCall);
