@@ -21,6 +21,8 @@
 #include "LotwDialog.h"
 #include "AprsActivityDialog.h"
 #include "AetherSettingsReader.h"
+#include "MqttPublisher.h"
+#include "ShackStatus.h"
 
 #include <QDialog>
 #include <QPlainTextEdit>
@@ -59,6 +61,7 @@
 #include <QStatusBar>
 #include <QStringList>
 #include <QStyle>
+#include <QSysInfo>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -275,6 +278,20 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_tci, &TciClient::frequencyChanged,  this, &MainWindow::onTciFrequencyChanged);
     connect(m_tci, &TciClient::modeChanged,       this, &MainWindow::onTciModeChanged);
 
+    // Shack status to MQTT (#24). Transmit state only comes from TCI.
+    m_mqtt = new MqttPublisher(this);
+    m_mqtt->setThrottle(QString::fromLatin1(ShackStatus::kFrequency), 500);
+    connect(m_tci, &TciClient::transmittingChanged, this, [this](bool on) {
+        m_mqtt->publishState(QString::fromLatin1(ShackStatus::kTransmitting),
+                             ShackStatus::onOff(on));
+    });
+    connect(m_model, &LogbookModel::qsoAdded, this,
+            [this](qint64 id) { publishQsoStatus(id); });
+    connect(m_model, &LogbookModel::qsoDeleted, this, [this]() { publishQsoStatus(); });
+    m_mqttDayTimer = new QTimer(this);
+    m_mqttDayTimer->setInterval(60 * 1000);
+    connect(m_mqttDayTimer, &QTimer::timeout, this, [this]() { publishQsoStatus(); });
+
     // rigctld feeds the SAME handlers. Frequency and mode are frequency and
     // mode whatever carried them, so the rest of the app never learns which
     // kind of radio is attached.
@@ -383,6 +400,7 @@ MainWindow::MainWindow(QWidget* parent)
     applyClusterConfigFromSettings();
     applyPotaConfigFromSettings();
     applyLookupConfigFromSettings();
+    applyMqttConfigFromSettings();
 }
 
 MainWindow::~MainWindow() = default;
@@ -1163,6 +1181,7 @@ void MainWindow::onSettings()
         applyClusterConfigFromSettings();
         applyPotaConfigFromSettings();
         applyLookupConfigFromSettings();
+        applyMqttConfigFromSettings();
         refreshStatusBar();
         // The source may have changed from TCI to rigctld or back.
         refreshLinkLabel();
@@ -1292,6 +1311,7 @@ void MainWindow::onSwitchLog()
     if (!chooseAndOpenLog(/*startup*/ false)) return;
     refreshTable();
     refreshStatusBar();
+    applyMqttConfigFromSettings();   // a different log may have a different callsign
 }
 
 void MainWindow::onShowAwards()
@@ -1607,6 +1627,7 @@ void MainWindow::onTciConnectionChanged(bool connected)
     // settings when something is not working.
     refreshLinkLabel();
     refreshStatusBar();
+    publishRadioStatus();
     if (!connected) {
         // Don't clear cached freq/mode — keep them so a brief disconnect
         // doesn't wipe the auto-fill mid-QSO.
@@ -1620,6 +1641,7 @@ void MainWindow::onTciFrequencyChanged(double mhz)
     refreshHeader();
     refreshDupBadge();
     tryAutofillFromSpot();
+    publishRadioStatus();
 }
 
 void MainWindow::onTciModeChanged(const QString& mode)
@@ -1642,6 +1664,7 @@ void MainWindow::onTciModeChanged(const QString& mode)
     refreshHeader();
     refreshDupBadge();
     tryAutofillFromSpot();
+    publishRadioStatus();
 }
 
 // ── Spot autofill (Phase 2) ──────────────────────────────────────────────
@@ -2095,6 +2118,82 @@ QString MainWindow::currentRadioName() const
     if (!nick.isEmpty()) return nick;
 
     return m_tci->deviceName().trimmed();
+}
+
+void MainWindow::applyMqttConfigFromSettings()
+{
+    if (!m_model || !m_mqtt) return;
+    const QString call = m_model->myCall();
+
+    MqttConfig cfg;
+    cfg.enabled  = m_model->settingValue("MQTT_ENABLE", "0") == "1";
+    cfg.host     = m_model->settingValue("MQTT_HOST").trimmed();
+    const int port = m_model->settingValue("MQTT_PORT", "1883").toInt();
+    cfg.port     = static_cast<quint16>((port > 0 && port < 65536) ? port : 1883);
+    cfg.username = m_model->settingValue("MQTT_USERNAME").trimmed();
+    cfg.password = m_model->settingValue("MQTT_PASSWORD");
+    QString prefix = m_model->settingValue("MQTT_TOPIC_PREFIX").trimmed();
+    while (prefix.endsWith(QLatin1Char('/'))) prefix.chop(1);
+    cfg.topicPrefix = prefix.isEmpty() ? ShackStatus::defaultTopicPrefix(call) : prefix;
+    // Unique per machine AND log: a broker disconnects the older of two
+    // clients sharing an id, so two ShackBooks would knock each other off.
+    cfg.clientId = QStringLiteral("shackbook-%1-%2")
+                       .arg(ShackStatus::nodeId(call),
+                            ShackStatus::nodeId(QSysInfo::machineHostName()));
+    m_mqtt->configure(cfg);
+
+    if (!cfg.enabled) {
+        m_mqttDayTimer->stop();
+        return;
+    }
+    m_mqttDayTimer->start();
+
+    const bool haDiscovery = m_model->settingValue("MQTT_HA_DISCOVERY", "1") == "1";
+    const bool qsoDetails  = m_model->settingValue("MQTT_PUBLISH_QSO", "0") == "1";
+    for (const auto& msg : ShackStatus::discoveryMessages(cfg.topicPrefix, call,
+                                                          versionString(), qsoDetails)) {
+        // Discovery off: retained deletes, so entities announced earlier go away.
+        m_mqtt->publishAbsolute(msg.topic, haDiscovery ? msg.payload : QByteArray{});
+    }
+    // Privacy: switching QSO details off must also clear the retained value,
+    // or the broker keeps serving the last callsign to anyone who subscribes.
+    if (!qsoDetails)
+        m_mqtt->publishState(QString::fromLatin1(ShackStatus::kLastQso), QByteArray{});
+
+    publishRadioStatus();
+    publishQsoStatus();
+}
+
+void MainWindow::publishRadioStatus()
+{
+    if (!m_mqtt) return;
+    using namespace ShackStatus;
+    const bool linked = (m_tci && m_tci->connected()) || (m_rigctld && m_rigctld->connected());
+    m_mqtt->publishState(QString::fromLatin1(kConnected), onOff(linked));
+    m_mqtt->publishState(QString::fromLatin1(kTransmitting),
+                         onOff(m_tci && m_tci->connected() && m_tci->transmitting()));
+    const QByteArray hz = frequencyPayload(m_curFreqMhz);
+    if (!hz.isEmpty())        m_mqtt->publishState(QString::fromLatin1(kFrequency), hz);
+    if (!m_curMode.isEmpty()) m_mqtt->publishState(QString::fromLatin1(kMode),
+                                                   modePayload(m_curMode, m_curSubmode));
+    if (!m_curBand.isEmpty()) m_mqtt->publishState(QString::fromLatin1(kBand),
+                                                   m_curBand.toUtf8());
+}
+
+void MainWindow::publishQsoStatus(qint64 addedQsoId)
+{
+    if (!m_mqtt || !m_model || !m_model->isOpen()) return;
+    if (m_model->settingValue("MQTT_ENABLE", "0") != "1") return;
+    LogbookFilter today;
+    today.dateFrom = today.dateTo = QDateTime::currentDateTimeUtc().toString("yyyyMMdd");
+    m_mqtt->publishState(QString::fromLatin1(ShackStatus::kCountToday),
+                         QByteArray::number(m_model->countQsos(today)));
+    if (addedQsoId >= 0 && m_model->settingValue("MQTT_PUBLISH_QSO", "0") == "1") {
+        bool ok = false;
+        const Qso q = m_model->getQso(addedQsoId, &ok);
+        if (ok) m_mqtt->publishState(QString::fromLatin1(ShackStatus::kLastQso),
+                                     ShackStatus::lastQsoPayload(q));
+    }
 }
 
 double MainWindow::txPowerForNewQso() const

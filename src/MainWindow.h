@@ -33,6 +33,7 @@ namespace ShackBook {
 
 class LogbookModel;
 class TciClient;
+class MqttPublisher;
 class RigctldClient;
 class RigctldSupervisor;
 class SpotIndex;
@@ -143,6 +144,11 @@ private:
     void applyClusterConfigFromSettings();
     void applyPotaConfigFromSettings();
     void applyLookupConfigFromSettings();
+    // MQTT shack status for Home Assistant (#24). Publishing is best effort:
+    // none of these can block or fail logging.
+    void applyMqttConfigFromSettings();
+    void publishRadioStatus();
+    void publishQsoStatus(qint64 addedQsoId = -1);
     void tryAutofillFromSpot();
     // Kick the callsign-lookup chain (worked-before → cty.dat → online).
     // Results land in m_lookupFill and merge into empty fields at save.
@@ -161,6 +167,8 @@ private:
     SpotIndex*       m_spotIndex{nullptr};
     DxClusterClient* m_dxc{nullptr};
     PotaClient*      m_pota{nullptr};
+    MqttPublisher*   m_mqtt{nullptr};
+    QTimer*          m_mqttDayTimer{nullptr};   // rolls qso/count_today over at 00:00 UTC
     QTimer*          m_spotPurgeTimer{nullptr};
     QPlainTextEdit*  m_dxcLog{nullptr};   // diagnostic — see onShowClusterLog()
 

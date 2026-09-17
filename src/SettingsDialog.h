@@ -99,6 +99,16 @@ private:
 
     // Contest
     QCheckBox*  m_contestMode{};
+
+    // MQTT (#24)
+    QCheckBox*  m_mqttEnable{};
+    QLineEdit*  m_mqttHost{};
+    QSpinBox*   m_mqttPort{};
+    QLineEdit*  m_mqttUser{};
+    QLineEdit*  m_mqttPass{};
+    QLineEdit*  m_mqttPrefix{};
+    QCheckBox*  m_mqttHaDiscovery{};
+    QCheckBox*  m_mqttPublishQso{};
     QComboBox*  m_contestId{};
     QSpinBox*   m_stxNext{};
 

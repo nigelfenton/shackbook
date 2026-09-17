@@ -8,6 +8,7 @@
 
 #include <QSerialPortInfo>
 #include "TciDiscovery.h"
+#include "ShackStatus.h"   // default MQTT topic prefix
 
 #include <QComboBox>
 #include <QEventLoop>
@@ -349,6 +350,41 @@ void SettingsDialog::buildUI()
     cabL->addRow("Transmitter",   m_cbCatTransmitter);
     tabs->addTab(cab, "Cabrillo");
 
+    // ── MQTT (#24) ──────────────────────────────────────────────────────
+    auto* mq  = new QWidget;
+    auto* mqL = new QFormLayout(mq);
+    m_mqttEnable = new QCheckBox("Publish shack status to an MQTT broker (e.g. for Home Assistant)");
+    m_mqttHost   = new QLineEdit;
+    m_mqttHost->setPlaceholderText("broker address, e.g. 10.0.0.51");
+    m_mqttPort   = new QSpinBox;
+    m_mqttPort->setRange(1, 65535);
+    m_mqttUser   = new QLineEdit;
+    m_mqttPass   = new QLineEdit;
+    m_mqttPass->setEchoMode(QLineEdit::Password);
+    m_mqttPrefix = new QLineEdit;
+    m_mqttPrefix->setPlaceholderText(ShackStatus::defaultTopicPrefix(m_model->myCall()));
+    m_mqttHaDiscovery = new QCheckBox("Home Assistant discovery (entities appear automatically)");
+    m_mqttPublishQso  = new QCheckBox("Publish QSO details (the other station's callsign)");
+    m_mqttPublishQso->setToolTip(
+        "Off by default: puts the last contact's callsign, band and mode on the broker, "
+        "where anything allowed to subscribe can read it. Radio status and the "
+        "day's QSO count are published either way.");
+    auto* mqNote = new QLabel(
+        "LAN broker only (no TLS). The password is stored in this logbook's settings "
+        "in plain text, so use a dedicated broker account that can only publish "
+        "under the topic prefix, not a personal password. Logging never waits on the broker.");
+    mqNote->setWordWrap(true);
+    mqL->addRow(m_mqttEnable);
+    mqL->addRow("Broker host",   m_mqttHost);
+    mqL->addRow("Port",          m_mqttPort);
+    mqL->addRow("Username",      m_mqttUser);
+    mqL->addRow("Password",      m_mqttPass);
+    mqL->addRow("Topic prefix",  m_mqttPrefix);
+    mqL->addRow(m_mqttHaDiscovery);
+    mqL->addRow(m_mqttPublishQso);
+    mqL->addRow(mqNote);
+    tabs->addTab(mq, "MQTT");
+
     auto* btns = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     connect(btns, &QDialogButtonBox::accepted, this, &SettingsDialog::onAccept);
     connect(btns, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -491,6 +527,15 @@ void SettingsDialog::populate()
     if (idx >= 0) m_contestId->setCurrentIndex(idx);
     else          m_contestId->setEditText(cid);
     m_stxNext->setValue(m_model->settingValue("CONTEST_STX_NEXT", "1").toInt());
+
+    m_mqttEnable->setChecked(m_model->settingValue("MQTT_ENABLE", "0") == "1");
+    m_mqttHost->setText(m_model->settingValue("MQTT_HOST"));
+    m_mqttPort->setValue(m_model->settingValue("MQTT_PORT", "1883").toInt());
+    m_mqttUser->setText(m_model->settingValue("MQTT_USERNAME"));
+    m_mqttPass->setText(m_model->settingValue("MQTT_PASSWORD"));
+    m_mqttPrefix->setText(m_model->settingValue("MQTT_TOPIC_PREFIX"));
+    m_mqttHaDiscovery->setChecked(m_model->settingValue("MQTT_HA_DISCOVERY", "1") == "1");
+    m_mqttPublishQso->setChecked(m_model->settingValue("MQTT_PUBLISH_QSO", "0") == "1");
 
     m_cbName->setText(m_model->settingValue("CABRILLO_NAME"));
     m_cbAddress->setText(m_model->settingValue("CABRILLO_ADDRESS"));
@@ -797,6 +842,15 @@ void SettingsDialog::onAccept()
     m_model->setSetting("CONTEST_MODE",     m_contestMode->isChecked() ? "1" : "0");
     m_model->setSetting("CONTEST_ID",       m_contestId->currentText().trimmed().toUpper());
     m_model->setSetting("CONTEST_STX_NEXT", QString::number(m_stxNext->value()));
+
+    m_model->setSetting("MQTT_ENABLE",        m_mqttEnable->isChecked() ? "1" : "0");
+    m_model->setSetting("MQTT_HOST",          m_mqttHost->text().trimmed());
+    m_model->setSetting("MQTT_PORT",          QString::number(m_mqttPort->value()));
+    m_model->setSetting("MQTT_USERNAME",      m_mqttUser->text().trimmed());
+    m_model->setSetting("MQTT_PASSWORD",      m_mqttPass->text());
+    m_model->setSetting("MQTT_TOPIC_PREFIX",  m_mqttPrefix->text().trimmed());
+    m_model->setSetting("MQTT_HA_DISCOVERY",  m_mqttHaDiscovery->isChecked() ? "1" : "0");
+    m_model->setSetting("MQTT_PUBLISH_QSO",   m_mqttPublishQso->isChecked() ? "1" : "0");
 
     m_model->setSetting("CABRILLO_NAME",      m_cbName->text().trimmed());
     m_model->setSetting("CABRILLO_ADDRESS",   m_cbAddress->text().trimmed());
