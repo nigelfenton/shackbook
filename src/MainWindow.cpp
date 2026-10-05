@@ -14,6 +14,7 @@
 #include "SpotIndex.h"
 #include "DxClusterClient.h"
 #include "PotaClient.h"
+#include "N1mmSpotClient.h"
 #include "CallsignLookup.h"
 #include "SectionMapDialog.h"
 #include "GridMapDialog.h"
@@ -63,6 +64,8 @@
 #include <QStyle>
 #include <QSysInfo>
 #include <QTableWidget>
+#include <QFont>
+#include <QPalette>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
@@ -201,6 +204,7 @@ MainWindow::MainWindow(QWidget* parent)
       m_spotIndex(new SpotIndex(this)),
       m_dxc(new DxClusterClient(this)),
       m_pota(new PotaClient(this)),
+      m_n1mm(new N1mmSpotClient(this)),
       m_spotPurgeTimer(new QTimer(this))
 {
     setWindowTitle(windowTitleFor({}));
@@ -322,6 +326,21 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::onPotaSpotReceived);
     connect(m_pota, &PotaClient::pollCompleted,
             this, &MainWindow::onPotaPollCompleted);
+    connect(m_n1mm, &N1mmSpotClient::spotReceived,
+            this, &MainWindow::onN1mmSpotReceived);
+    connect(m_n1mm, &N1mmSpotClient::spotDeleted,
+            this, &MainWindow::onN1mmSpotDeleted);
+    // A port another program holds must not look like a quiet contest (#11).
+    connect(m_n1mm, &N1mmSpotClient::listeningChanged, this,
+            [this](bool listening, const QString& error) {
+                if (!error.isEmpty()) statusBar()->showMessage(error, 20000);
+                if (m_dxcLog)
+                    m_dxcLog->appendPlainText(QString("[%1] N1MM spots: %2")
+                        .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+                        .arg(!error.isEmpty() ? error
+                             : listening ? QStringLiteral("listening on UDP port %1").arg(m_n1mm->port())
+                                         : QStringLiteral("stopped")));
+            });
 
     connect(m_dxc, &DxClusterClient::loginRejected, this,
             [this](const QString& reason) {
@@ -399,6 +418,7 @@ MainWindow::MainWindow(QWidget* parent)
     applyAutoConnectFromSettings();
     applyClusterConfigFromSettings();
     applyPotaConfigFromSettings();
+    applyN1mmConfigFromSettings();
     applyLookupConfigFromSettings();
     applyMqttConfigFromSettings();
 }
@@ -1180,6 +1200,7 @@ void MainWindow::onSettings()
         // (no-op if nothing changed; enables/disables/reconnects otherwise).
         applyClusterConfigFromSettings();
         applyPotaConfigFromSettings();
+        applyN1mmConfigFromSettings();
         applyLookupConfigFromSettings();
         applyMqttConfigFromSettings();
         refreshStatusBar();
@@ -1788,19 +1809,33 @@ void MainWindow::onShowSpotIndex()
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setAlternatingRowColors(true);
     table->verticalHeader()->setVisible(false);
-    table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({"Freq (MHz)", "Mode", "Call", "Source", "Comment"});
+    table->setColumnCount(6);
+    table->setHorizontalHeaderLabels({"Freq (MHz)", "Mode", "Call", "Status", "Source", "Comment"});
     table->horizontalHeader()->setStretchLastSection(true);
 
     const auto rows = m_spotIndex->snapshot();
     table->setRowCount(rows.size());
     for (int i = 0; i < rows.size(); ++i) {
         const auto& s = rows[i];
-        table->setItem(i, 0, new QTableWidgetItem(QString::number(s.freqMhz, 'f', 4)));
-        table->setItem(i, 1, new QTableWidgetItem(s.mode));
-        table->setItem(i, 2, new QTableWidgetItem(s.call));
-        table->setItem(i, 3, new QTableWidgetItem(s.source));
-        table->setItem(i, 4, new QTableWidgetItem(s.comment));
+        const QString comment = s.spotter.isEmpty()
+            ? s.comment
+            : QStringLiteral("%1 (de %2)").arg(s.comment, s.spotter).trimmed();
+        const QStringList cells = {QString::number(s.freqMhz, 'f', 4), s.mode, s.call,
+                                   s.status, s.source, comment};
+        for (int c = 0; c < cells.size(); ++c) {
+            auto* item = new QTableWidgetItem(cells[c]);
+            // A logger's contest state is the point of an N1MM spot (#11): a
+            // dupe is shown but greyed (already worked, not "not spotted"),
+            // a needed multiplier stands out.
+            if (s.status == QLatin1String("dupe"))
+                item->setForeground(table->palette().brush(QPalette::Disabled, QPalette::Text));
+            if (s.status == QLatin1String("mult")) {
+                QFont f = item->font();
+                f.setBold(true);
+                item->setFont(f);
+            }
+            table->setItem(i, c, item);
+        }
     }
     table->resizeColumnsToContents();
     table->horizontalHeader()->setStretchLastSection(true);
@@ -1983,6 +2018,52 @@ void MainWindow::onPotaPollCompleted(int spots, const QString& errorOrEmpty)
         }
     }
     refreshStatusBar();
+}
+
+void MainWindow::onN1mmSpotReceived(const SpotData& spot)
+{
+    if (!m_spotIndex) return;
+    m_spotIndex->addOrUpdate(spot);
+    if (m_dxcLog)
+        m_dxcLog->appendPlainText(QString("[%1] N1MM %2 @ %3 MHz  %4%5")
+            .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+            .arg(spot.call)
+            .arg(spot.freqMhz, 0, 'f', 4)
+            .arg(spot.status.isEmpty() ? QString() : QStringLiteral("[%1] ").arg(spot.status))
+            .arg(spot.comment));
+    refreshStatusBar();
+}
+
+void MainWindow::onN1mmSpotDeleted(const QString& call, double freqMhz)
+{
+    if (!m_spotIndex) return;
+    // Per (call, band): a delete on 20m leaves the same call's 40m spot alone.
+    const bool removed = m_spotIndex->remove(call, freqMhz);
+    if (m_dxcLog)
+        m_dxcLog->appendPlainText(QString("[%1] N1MM delete %2 @ %3 MHz%4")
+            .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+            .arg(call)
+            .arg(freqMhz, 0, 'f', 4)
+            .arg(removed ? QString() : QStringLiteral(" (not held on that band)")));
+    refreshStatusBar();
+}
+
+void MainWindow::applyN1mmConfigFromSettings()
+{
+    if (!m_model || !m_n1mm) return;
+    // Off by default: it opens a listening UDP port, which an operator
+    // should choose to do.
+    const bool enable = m_model->settingValue("N1MM_SPOTS_ENABLE", "0") == "1";
+    const quint16 port = static_cast<quint16>(m_model->settingValue(
+        "N1MM_SPOTS_PORT", QString::number(N1mmSpotClient::defaultPort())).toUInt());
+    if (!enable) {
+        if (m_n1mm->listening()) m_n1mm->stop();
+        return;
+    }
+    // Re-bind only when something changed, so saving Settings mid-contest
+    // doesn't drop spots in flight.
+    if (m_n1mm->listening() && m_n1mm->port() == port) return;
+    m_n1mm->start(port ? port : N1mmSpotClient::defaultPort());
 }
 
 void MainWindow::applyPotaConfigFromSettings()

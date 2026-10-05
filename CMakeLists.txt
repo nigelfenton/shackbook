@@ -83,6 +83,11 @@ set(SHACKBOOK_SOURCES
     src/SpotData.h
     src/SpotIndex.cpp
     src/SpotIndex.h
+    src/Band.h
+    src/N1mmSpotParser.cpp
+    src/N1mmSpotParser.h
+    src/N1mmSpotClient.cpp
+    src/N1mmSpotClient.h
     src/AetherSettingsReader.cpp
     src/AetherSettingsReader.h
     src/DxClusterClient.cpp
@@ -451,6 +456,21 @@ if(SHACKBOOK_TESTS)
     target_include_directories(rigctld_connection_test PRIVATE src)
     target_link_libraries(rigctld_connection_test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME rigctld_connection_test COMMAND rigctld_connection_test)
+
+    # N1MM+ / DXLog spots over UDP (#11): the parser, per-band delete in
+    # SpotIndex, and the client end to end on loopback.
+    add_executable(n1mm_spot_test
+        tests/n1mm_spot_test.cpp
+        src/N1mmSpotParser.cpp
+        src/N1mmSpotParser.h
+        src/N1mmSpotClient.cpp
+        src/N1mmSpotClient.h
+        src/SpotIndex.cpp
+        src/SpotIndex.h
+    )
+    target_include_directories(n1mm_spot_test PRIVATE src)
+    target_link_libraries(n1mm_spot_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME n1mm_spot_test COMMAND n1mm_spot_test)
 
     # Bench tool, not a test: points the real client at an EXTERNAL rigctld
     # (the Python personas, or a real radio). Deliberately not add_test'd —

@@ -272,6 +272,26 @@ void SettingsDialog::buildUI()
     dxcL->addRow(m_potaEnable);
     dxcL->addRow("POTA poll interval", m_potaPollSec);
 
+    // ── N1MM+ / DXLog bandmap spots over UDP (#11) ──
+    auto* n1mmSep = new QLabel("─── N1MM+ / DXLog bandmap (UDP) ───");
+    n1mmSep->setStyleSheet("QLabel { color: #6b8099; font-size: 9px; "
+                           "font-weight: bold; letter-spacing: 0.08em; }");
+    dxcL->addRow(n1mmSep);
+    m_n1mmEnable = new QCheckBox("Listen for N1MM+ / DXLog spots");
+    m_n1mmEnable->setToolTip(
+        "Take spots from your contest logger's bandmap. They carry contest state "
+        "(dupe, mult, new) and are removed when the logger removes them.\n\n"
+        "Receive-only. In N1MM+, add this port to Config > Configure Ports > "
+        "Broadcast Data > Spots.");
+    m_n1mmPort = new QSpinBox;
+    m_n1mmPort->setRange(1, 65535);
+    m_n1mmPort->setToolTip(
+        "UDP port to listen on. N1MM+ uses 12060 by default, but SmartSDR CAT "
+        "often holds it already. If so, pick another (e.g. 12061) and add it to "
+        "N1MM+'s broadcast list.");
+    dxcL->addRow(m_n1mmEnable);
+    dxcL->addRow("N1MM UDP port", m_n1mmPort);
+
     auto refreshDxcEditable = [this]() {
         const bool manual = !m_dxcAutoDetect->isChecked();
         m_dxcHost->setEnabled(manual);
@@ -517,6 +537,8 @@ void SettingsDialog::populate()
 
     m_potaEnable->setChecked(m_model->settingValue("POTA_ENABLE", "1") == "1");
     m_potaPollSec->setValue(m_model->settingValue("POTA_POLL_SEC", "30").toInt());
+    m_n1mmEnable->setChecked(m_model->settingValue("N1MM_SPOTS_ENABLE", "0") == "1");
+    m_n1mmPort->setValue(m_model->settingValue("N1MM_SPOTS_PORT", "12060").toInt());
 
     const bool manual = !m_dxcAutoDetect->isChecked();
     m_dxcHost->setEnabled(manual);
@@ -896,6 +918,8 @@ void SettingsDialog::onAccept()
 
     m_model->setSetting("POTA_ENABLE",   m_potaEnable->isChecked() ? "1" : "0");
     m_model->setSetting("POTA_POLL_SEC", QString::number(m_potaPollSec->value()));
+    m_model->setSetting("N1MM_SPOTS_ENABLE", m_n1mmEnable->isChecked() ? "1" : "0");
+    m_model->setSetting("N1MM_SPOTS_PORT",   QString::number(m_n1mmPort->value()));
 
     m_model->setSetting("LOOKUP_WORKEDBEFORE", m_lkWorkedBefore->isChecked() ? "1" : "0");
     m_model->setSetting("LOOKUP_CTY",          m_lkCty->isChecked() ? "1" : "0");
