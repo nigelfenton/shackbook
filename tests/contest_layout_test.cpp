@@ -103,13 +103,13 @@ struct Form {
     Form()
     {
         auto* row = new QHBoxLayout(&root);
-        const QList<QPair<S, QString>> slots = {
+        const QList<QPair<S, QString>> formFields = {
             {S::Call, QStringLiteral("CALL")}, {S::RstSent, QStringLiteral("RST→")},
             {S::RstRcvd, QStringLiteral("←RST")}, {S::Comment, QStringLiteral("COMMENT")},
             {S::Stx, QStringLiteral("STX")}, {S::StxText, QStringLiteral("STX exch")},
             {S::Srx, QStringLiteral("SRX")}, {S::SrxText, QStringLiteral("SRX exch")}};
         int i = 0;
-        for (const auto& [slot, text] : slots) {
+        for (const auto& [slot, text] : formFields) {
             auto* l = new QLabel(text);
             l->setStyleSheet(QStringLiteral("QLabel { color: #6b80%1; }").arg(10 + i));
             auto* e = new QLineEdit;
