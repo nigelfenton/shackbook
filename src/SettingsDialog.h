@@ -24,6 +24,7 @@ class QCheckBox;
 namespace ShackBook {
 
 class LogbookModel;
+class RigctldConnectionTest;
 
 class SettingsDialog : public QDialog {
     Q_OBJECT
@@ -45,10 +46,14 @@ private slots:
     void refreshSerialPorts();
     // Show the exact command to paste, built from the three pickers.
     void refreshRigCommand();
+    // Ask rigctld at the typed Host/Port for the radio's frequency and mode,
+    // and say what came back or which link failed (#15).
+    void onTestRigConnection();
 
 private:
     void buildUI();
     void populate();
+    void clearRigTestResult();
 
     LogbookModel* m_model;
 
@@ -70,6 +75,9 @@ private:
     QComboBox*   m_rigPort{};
     QComboBox*   m_rigBaud{};
     QLabel*      m_rigCommand{};
+    QPushButton* m_rigTest{};
+    QLabel*      m_rigTestResult{};
+    RigctldConnectionTest* m_rigTester{};
     QPushButton* m_tciScan{};
     QLineEdit*  m_tciNickname{};
     QCheckBox*  m_tciAutoConnect{};

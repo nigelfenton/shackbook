@@ -48,6 +48,8 @@ set(SHACKBOOK_SOURCES
     src/TciDiscovery.h
     src/RigctldClient.cpp
     src/RigctldClient.h
+    src/RigctldConnectionTest.cpp
+    src/RigctldConnectionTest.h
     src/HamlibRigList.cpp
     src/HamlibRigList.h
     src/RigctldSupervisor.cpp
@@ -438,6 +440,17 @@ if(SHACKBOOK_TESTS)
     target_include_directories(rigctld_client_test PRIVATE src)
     target_link_libraries(rigctld_client_test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME rigctld_client_test COMMAND rigctld_client_test)
+
+    # "Test connection" in Settings (#15): every outcome against fake rigctlds,
+    # and a pin that it only ever sends read commands.
+    add_executable(rigctld_connection_test
+        tests/rigctld_connection_test.cpp
+        src/RigctldConnectionTest.cpp
+        src/RigctldConnectionTest.h
+    )
+    target_include_directories(rigctld_connection_test PRIVATE src)
+    target_link_libraries(rigctld_connection_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME rigctld_connection_test COMMAND rigctld_connection_test)
 
     # Bench tool, not a test: points the real client at an EXTERNAL rigctld
     # (the Python personas, or a real radio). Deliberately not add_test'd —

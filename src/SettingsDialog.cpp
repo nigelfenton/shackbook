@@ -4,6 +4,7 @@
 #include "AetherSettingsReader.h"
 #include "TciClient.h"      // tciNicknameKey()
 #include "RigctldClient.h"   // rigctldNicknameKey()
+#include "RigctldConnectionTest.h"
 #include "HamlibRigList.h"
 
 #include <QSerialPortInfo>
@@ -199,6 +200,26 @@ void SettingsDialog::buildUI()
     tciL->addRow("Host", m_tciHost);
     tciL->addRow("Port", m_tciPort);
     tciL->addRow(QString(), m_tciScan);
+
+    // "Is it actually working?" (#15). Proves the chain by asking the radio
+    // where it is, and names the broken link when it can't, above all the
+    // wrong-baud case that otherwise connects and silently reads nothing.
+    // Tests the Host and Port as typed, so a setup can be tried before saving.
+    m_rigTest = new QPushButton("Test connection");
+    m_rigTest->setToolTip(
+        "Ask rigctld for the radio's frequency and mode, and show what came back.\n\n"
+        "Read-only: it never keys or tunes the radio.");
+    connect(m_rigTest, &QPushButton::clicked, this, &SettingsDialog::onTestRigConnection);
+    tciL->addRow(QString(), m_rigTest);
+    m_rigTestResult = new QLabel;
+    m_rigTestResult->setWordWrap(true);
+    m_rigTestResult->setTextInteractionFlags(Qt::TextSelectableByMouse
+                                             | Qt::TextSelectableByKeyboard);
+    m_rigTestResult->setVisible(false);
+    tciL->addRow(QString(), m_rigTestResult);
+    // A result describes the address it tested; once that changes it is stale.
+    connect(m_tciHost, &QLineEdit::textChanged, this, [this]() { clearRigTestResult(); });
+    connect(m_tciPort, &QSpinBox::valueChanged, this, [this]() { clearRigTestResult(); });
     tciL->addRow("Radio nickname", m_tciNickname);
     tciL->addRow(m_tciAutoConnect);
     tciL->addRow(m_spotTunes);
@@ -654,6 +675,8 @@ void SettingsDialog::refreshRigCommand()
     m_rigPort->setVisible(rig);
     m_rigBaud->setVisible(rig);
     m_rigCommand->setVisible(rig);
+    if (m_rigTest) m_rigTest->setVisible(rig);
+    if (!rig) clearRigTestResult();
     if (!rig) return;
 
     // The model NUMBER, not the label. userData holds it for a chosen row;
@@ -692,6 +715,48 @@ void SettingsDialog::refreshRigCommand()
         "Run this, and leave it running:<br><code>%1</code><br>"
         "ShackBook talks to it on port 4532; it does not start it, so nothing "
         "else loses the serial port.").arg(cmd.toHtmlEscaped()));
+}
+
+void SettingsDialog::clearRigTestResult()
+{
+    if (!m_rigTestResult) return;
+    // A test still running belongs to the old address; let it finish unseen.
+    if (m_rigTester && m_rigTester->running()) return;
+    m_rigTestResult->clear();
+    m_rigTestResult->setVisible(false);
+}
+
+void SettingsDialog::onTestRigConnection()
+{
+    if (!m_rigTester) {
+        m_rigTester = new RigctldConnectionTest(this);
+        connect(m_rigTester, &RigctldConnectionTest::finished, this,
+                [this](const RigctldTestResult& r) {
+                    const bool ok = r.outcome == RigctldTestResult::Outcome::Ok;
+                    m_rigTestResult->setStyleSheet(ok
+                        ? QStringLiteral("QLabel { color: #2e7d32; }")
+                        : QStringLiteral("QLabel { color: #c62828; }"));
+                    m_rigTestResult->setText((ok ? QStringLiteral("✓ ")
+                                                 : QStringLiteral("✗ "))
+                                             + describeRigctldTest(r));
+                    m_rigTest->setEnabled(true);
+                    m_rigTest->setText(tr("Test connection"));
+                });
+    }
+    if (m_rigTester->running()) return;
+
+    QString host = m_tciHost->text().trimmed();
+    if (host.isEmpty()) host = m_tciHost->placeholderText();
+    const auto port = static_cast<quint16>(m_tciPort->value());
+
+    m_rigTest->setEnabled(false);
+    m_rigTest->setText(QStringLiteral("Testing…"));
+    m_rigTestResult->setStyleSheet(QStringLiteral("QLabel { color: #6b8099; }"));
+    m_rigTestResult->setText(tr("Asking rigctld at %1:%2 for the radio's frequency. "
+                                "If the radio doesn't answer, this can take several "
+                                "seconds.").arg(host).arg(port));
+    m_rigTestResult->setVisible(true);
+    m_rigTester->start(host, port);
 }
 
 void SettingsDialog::onScanForRadios()
