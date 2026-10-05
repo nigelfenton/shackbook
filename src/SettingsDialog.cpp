@@ -207,9 +207,7 @@ void SettingsDialog::buildUI()
     // Tests the Host and Port as typed, so a setup can be tried before saving.
     m_rigTest = new QPushButton("Test connection");
     m_rigTest->setToolTip(
-        "Ask rigctld for the radio's frequency and mode, and show what came back.
-
-"
+        "Ask rigctld for the radio's frequency and mode, and show what came back.\n\n"
         "Read-only: it never keys or tunes the radio.");
     connect(m_rigTest, &QPushButton::clicked, this, &SettingsDialog::onTestRigConnection);
     tciL->addRow(QString(), m_rigTest);
