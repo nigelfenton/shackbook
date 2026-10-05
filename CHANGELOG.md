@@ -10,6 +10,15 @@ macOS DMG and attaches them to the GitHub release.
 
 ## [Unreleased]
 
+### Added
+- **"Test connection" for Hamlib rigctld radios** (Settings → TCI, when following the radio via
+  rigctld). It asks rigctld for the radio's frequency and mode at the Host and Port as typed, and
+  says what came back, e.g. "Connected to rigctld at 127.0.0.1:4532: IC-9700 reports
+  435.645935 MHz, FM." When it can't, it names the broken link: nothing listening, no answer,
+  rigctld silent, a serial-port error, a reply that doesn't make sense, or (the case that used to
+  look like success) **rigctld up but the radio not answering**, which points at the baud rate and
+  model. Read-only: it never keys or tunes the radio. (#15)
+
 ## [0.8.0] - 2026-10-04
 
 ### Added
