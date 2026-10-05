@@ -11,6 +11,14 @@ macOS DMG and attaches them to the GitHub release.
 ## [Unreleased]
 
 ### Added
+- **QSO party entry layout** (Tools → QSO Party Layout). Picking a contest puts its exchange
+  fields first in tab order and labels the exchange boxes for it (e.g. "←COUNTY"). Fields the
+  contest doesn't use are dimmed and skipped by Tab, never hidden. A banner shows the layout is on
+  and has **Exit layout**, which puts the form and your contest settings back exactly as they were.
+  The layout survives a restart; once the party's dates are over the banner says so, but it never
+  switches back by itself. While a party is running, ShackBook offers its layout and only switches
+  if you say yes. Saving a QSO with a needed exchange field empty warns once; press Enter again
+  to log it anyway. (#18)
 - **N1MM+ / DXLog bandmap spots over UDP**, a third spot source beside the DX cluster and
   POTA (Settings → DX Cluster, off by default, port 12060). Spots carry the logger's contest
   state, shown in a new Status column of the Spot Index: dupes are greyed rather than hidden,

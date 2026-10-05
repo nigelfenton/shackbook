@@ -82,6 +82,10 @@ public:
     // "nothing coming up" in December would be wrong, not merely unhelpful.
     QVector<ContestOccurrence> upcoming(const QDate& from, int limit = 5) const;
 
+    // Every loaded event, for callers that need an event's dates in a given
+    // year (e.g. "did the party whose layout is on end already?", #18).
+    QVector<ContestEvent> events() const { return m_events; }
+
     static QString      ruleName(Recurrence r);
     static Recurrence   ruleFromName(const QString& s, bool* ok = nullptr);
 

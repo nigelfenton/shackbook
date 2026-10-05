@@ -15,6 +15,9 @@
 // Owns the LogbookModel and a TciClient singleton.
 
 #include "CtyDat.h"
+#include "ContestCalendar.h"
+#include "ContestDef.h"
+#include "ContestLayoutController.h"
 #include "Qso.h"
 
 #include <QMainWindow>
@@ -24,6 +27,7 @@ class QComboBox;
 class QFrame;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QPlainTextEdit;
 class QPushButton;
 class QTableWidget;
@@ -119,6 +123,13 @@ private:
     void refreshHeader();
     void refreshQuickEntry();
     void refreshContestUI();
+    // QSO party layout (#18): a per-contest entry layout derived from ContestDef.
+    void startPartyLayout(const QString& contestId);
+    void exitPartyLayout();
+    void applyPartyLayoutFromSettings();
+    void refreshPartyBanner(const ContestDef& def);
+    void refreshPartyHint();
+    void populatePartyMenu();
     void refreshTable();
     // Operator chooser: pick / create the per-callsign log and (re)open it.
     // At startup a cancel falls back to the last-used (or legacy) log; on a
@@ -221,6 +232,21 @@ private:
 
     // Contest sub-row
     QFrame*    m_contestFrame{};
+
+    // QSO party layout (#18)
+    ContestCatalog          m_contests;
+    ContestCalendar         m_calendar;
+    ContestLayoutController m_layoutCtl;
+    bool                    m_layoutReady{false};   // everyday form captured
+    QFrame*                 m_partyBanner{};
+    QLabel*                 m_partyBannerText{};
+    QFrame*                 m_partyHint{};
+    QLabel*                 m_partyHintText{};
+    QString                 m_partyHintId;           // contest the hint offers
+    QString                 m_partyHintKey;          // id|start, for "not now"
+    QMenu*                  m_partyMenu{};
+    QTimer*                 m_partyHintTimer{};
+    QString                 m_saveWarnedFor;         // call already warned about
     QLabel*    m_contestIdLabel{};
     QLineEdit* m_stxEdit{};
     QLineEdit* m_stxStringEdit{};

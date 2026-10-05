@@ -15,6 +15,7 @@
 #include "DxClusterClient.h"
 #include "PotaClient.h"
 #include "N1mmSpotClient.h"
+#include "ContestLayout.h"
 #include "CallsignLookup.h"
 #include "SectionMapDialog.h"
 #include "GridMapDialog.h"
@@ -51,6 +52,9 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QDate>
+#include <QHash>
+#include <QLocale>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
@@ -228,6 +232,11 @@ MainWindow::MainWindow(QWidget* parent)
     // Callsign-lookup chain: cty.dat ships inside the binary as a resource;
     // online providers are configured from settings (Lookup tab).
     m_cty.load(QStringLiteral(":/data/cty.dat"));
+    // Contest definitions and calendar for the QSO party layout (#18). Loaded
+    // before any settings are applied, so a layout saved mid-contest is
+    // recognised on startup rather than dropped as unknown.
+    m_contests.load(QStringLiteral(":/data/contests.dat"));
+    m_calendar.load(QStringLiteral(":/data/calendar.dat"));
     if (!m_cty.isLoaded())
         qWarning() << "cty.dat resource failed to load — offline country "
                       "lookup disabled";
@@ -415,6 +424,17 @@ MainWindow::MainWindow(QWidget* parent)
     refreshStatusBar();
     refreshLinkLabel();
 
+    // The everyday entry form is complete: snapshot it, so a party layout can
+    // always be reverted exactly (#18). Then bring back a layout that was on
+    // when ShackBook last closed.
+    m_layoutCtl.captureEveryday();
+    m_layoutReady = true;
+    applyPartyLayoutFromSettings();
+    m_partyHintTimer = new QTimer(this);
+    m_partyHintTimer->setInterval(30 * 60 * 1000);   // a party may start while we're open
+    connect(m_partyHintTimer, &QTimer::timeout, this, &MainWindow::refreshPartyHint);
+    m_partyHintTimer->start();
+
     applyAutoConnectFromSettings();
     applyClusterConfigFromSettings();
     applyPotaConfigFromSettings();
@@ -450,6 +470,8 @@ void MainWindow::buildMenus()
     m_actSettings      = toolsMenu->addAction("&Settings…", this, &MainWindow::onSettings);
     m_actAwards        = toolsMenu->addAction("&Awards…", this, &MainWindow::onShowAwards);
     toolsMenu->addAction("&QSO Party…", this, &MainWindow::onShowQsoParty);
+    m_partyMenu = toolsMenu->addMenu("QSO Party &Layout");
+    connect(m_partyMenu, &QMenu::aboutToShow, this, &MainWindow::populatePartyMenu);
     m_actLotw          = toolsMenu->addAction("&LoTW Upload…", this, &MainWindow::onShowLotw);
     toolsMenu->addSeparator();
     m_actFindRadios    = toolsMenu->addAction("&Find radios…",   this, &MainWindow::onFindRadios);
@@ -622,6 +644,53 @@ void MainWindow::buildUI()
         main->addWidget(sep);
     }
 
+    // ── QSO party layout banner and calendar hint (#18) ────────────────
+    {
+        auto makeBar = [](const char* border) {
+            auto* f = new QFrame;
+            f->setStyleSheet(QStringLiteral(
+                "QFrame { background: #10233a; border: 1px solid %1; border-radius: 3px; }")
+                .arg(QLatin1String(border)));
+            return f;
+        };
+        m_partyBanner = makeBar("#ffaa00");
+        auto* b = new QHBoxLayout(m_partyBanner);
+        b->setContentsMargins(8, 3, 8, 3);
+        m_partyBannerText = new QLabel;
+        m_partyBannerText->setStyleSheet("QLabel { color: #ffcc66; font-size: 11px; border: none; }");
+        m_partyBannerText->setWordWrap(true);
+        auto* exitBtn = new QPushButton("Exit layout");
+        exitBtn->setToolTip("Return to the everyday entry form, exactly as it was.");
+        connect(exitBtn, &QPushButton::clicked, this, &MainWindow::exitPartyLayout);
+        b->addWidget(m_partyBannerText, 1);
+        b->addWidget(exitBtn);
+        m_partyBanner->hide();
+        main->addWidget(m_partyBanner);
+
+        m_partyHint = makeBar("#2e5a88");
+        auto* h = new QHBoxLayout(m_partyHint);
+        h->setContentsMargins(8, 3, 8, 3);
+        m_partyHintText = new QLabel;
+        m_partyHintText->setStyleSheet("QLabel { color: #9fc3e8; font-size: 11px; border: none; }");
+        m_partyHintText->setWordWrap(true);
+        auto* useBtn = new QPushButton("Use its layout");
+        connect(useBtn, &QPushButton::clicked, this, [this]() {
+            if (!m_partyHintId.isEmpty()) startPartyLayout(m_partyHintId);
+        });
+        auto* notNow = new QPushButton("Not now");
+        connect(notNow, &QPushButton::clicked, this, [this]() {
+            // Remember the refusal for this occurrence only: next year's party
+            // may be wanted.
+            if (m_model) m_model->setSetting("PARTY_HINT_DISMISSED", m_partyHintKey);
+            m_partyHint->hide();
+        });
+        h->addWidget(m_partyHintText, 1);
+        h->addWidget(useBtn);
+        h->addWidget(notNow);
+        m_partyHint->hide();
+        main->addWidget(m_partyHint);
+    }
+
     // ── Quick entry row ────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
@@ -680,6 +749,11 @@ void MainWindow::buildUI()
         row->addWidget(m_dupBadge);
         row->addWidget(m_saveBtn);
         main->addLayout(row);
+
+        m_layoutCtl.registerSlot(EntrySlot::Call,    m_callEdit,    lc);
+        m_layoutCtl.registerSlot(EntrySlot::RstSent, m_rstSentEdit, lrs);
+        m_layoutCtl.registerSlot(EntrySlot::RstRcvd, m_rstRcvdEdit, lrr);
+        m_layoutCtl.registerSlot(EntrySlot::Comment, m_commentEdit, lc2);
     }
 
     // ── Contest sub-row (visibility tied to contestMode) ───────────────
@@ -730,6 +804,11 @@ void MainWindow::buildUI()
 
         m_contestFrame->hide();
         main->addWidget(m_contestFrame);
+
+        m_layoutCtl.registerSlot(EntrySlot::Stx,     m_stxEdit,       lstx);
+        m_layoutCtl.registerSlot(EntrySlot::StxText, m_stxStringEdit, lstxs);
+        m_layoutCtl.registerSlot(EntrySlot::Srx,     m_srxEdit,       lsrx);
+        m_layoutCtl.registerSlot(EntrySlot::SrxText, m_srxStringEdit, lsrxs);
     }
 
     // separator
@@ -862,7 +941,143 @@ void MainWindow::refreshContestUI()
         const int next = m_model->settingValue("CONTEST_STX_NEXT", "1").toInt();
         m_stxEdit->setText(QString::number(next > 0 ? next : 1));
     }
+    applyPartyLayoutFromSettings();
     refreshHeader();
+}
+
+// ── QSO party layout (#18) ─────────────────────────────────────────────────
+
+void MainWindow::startPartyLayout(const QString& contestId)
+{
+    if (!m_model) return;
+    const ContestDef def = m_contests.find(contestId);
+    if (!def.isValid()) return;
+    // Remember the contest settings from before, once, so Exit puts them back
+    // exactly rather than leaving contest mode switched on.
+    if (m_model->settingValue("PARTY_LAYOUT_ID").isEmpty()) {
+        m_model->setSetting("PARTY_LAYOUT_PREV_MODE", m_model->settingValue("CONTEST_MODE", "0"));
+        m_model->setSetting("PARTY_LAYOUT_PREV_ID",   m_model->settingValue("CONTEST_ID"));
+    }
+    m_model->setSetting("CONTEST_MODE", "1");
+    m_model->setSetting("CONTEST_ID", def.id);
+    m_model->setSetting("PARTY_LAYOUT_ID", def.id);
+    refreshContestUI();
+    populateContestFilter();
+}
+
+void MainWindow::exitPartyLayout()
+{
+    if (!m_model) return;
+    if (!m_model->settingValue("PARTY_LAYOUT_ID").isEmpty()) {
+        m_model->setSetting("CONTEST_MODE", m_model->settingValue("PARTY_LAYOUT_PREV_MODE", "0"));
+        m_model->setSetting("CONTEST_ID",   m_model->settingValue("PARTY_LAYOUT_PREV_ID"));
+    }
+    m_model->setSetting("PARTY_LAYOUT_ID", QString());
+    m_model->setSetting("PARTY_LAYOUT_PREV_MODE", QString());
+    m_model->setSetting("PARTY_LAYOUT_PREV_ID", QString());
+    m_saveWarnedFor.clear();
+    refreshContestUI();
+}
+
+void MainWindow::applyPartyLayoutFromSettings()
+{
+    if (!m_model || !m_layoutReady) return;
+    const QString id = m_model->settingValue("PARTY_LAYOUT_ID");
+    const ContestDef def = id.isEmpty() ? ContestDef{} : m_contests.find(id);
+
+    // The layout belongs to contest mode with this contest. If the operator
+    // turned contest mode off or picked another contest in Settings, that was
+    // their choice: end the layout without restoring the old settings.
+    const bool stillHeld = def.isValid() && m_model->contestMode()
+        && m_model->contestId().compare(def.id, Qt::CaseInsensitive) == 0;
+    if (!stillHeld) {
+        if (!id.isEmpty()) {
+            m_model->setSetting("PARTY_LAYOUT_ID", QString());
+            m_model->setSetting("PARTY_LAYOUT_PREV_MODE", QString());
+            m_model->setSetting("PARTY_LAYOUT_PREV_ID", QString());
+        }
+        if (m_layoutCtl.isApplied()) m_layoutCtl.revert();
+        m_partyBanner->hide();
+        refreshPartyHint();
+        return;
+    }
+
+    if (!m_layoutCtl.isApplied() || m_layoutCtl.current().contestId != def.id)
+        m_layoutCtl.apply(contestLayoutFor(def));
+    refreshPartyBanner(def);
+    m_partyHint->hide();
+}
+
+void MainWindow::refreshPartyBanner(const ContestDef& def)
+{
+    QString text = tr("<b>%1 layout</b>: fields it doesn't use are dimmed and skipped by Tab.")
+                       .arg(def.name.toHtmlEscaped());
+    if (!def.exchangeConfirmed)
+        text += tr(" The exchange hasn't been checked against the sponsor's rules yet.");
+
+    // Has the party ended? Offer the way out; never take it automatically.
+    const QDate today = QDate::currentDate();
+    for (const ContestEvent& e : m_calendar.events()) {
+        if (e.contestId.compare(def.id, Qt::CaseInsensitive) != 0) continue;
+        const QDate start = e.startIn(today.year());
+        const QDate end   = e.endIn(today.year());
+        if (start.isValid() && today >= start && today <= end) break;   // running now
+        const QDate lastEnd = (end.isValid() && end < today) ? end : e.endIn(today.year() - 1);
+        if (lastEnd.isValid() && lastEnd < today)
+            text += tr(" <b>It ended on %1</b>: exit the layout when you're done.")
+                        .arg(QLocale().toString(lastEnd, QLocale::ShortFormat));
+        break;
+    }
+    m_partyBannerText->setText(text);
+    m_partyBanner->show();
+}
+
+void MainWindow::refreshPartyHint()
+{
+    if (!m_model || !m_partyHint) return;
+    if (!m_model->settingValue("PARTY_LAYOUT_ID").isEmpty()) {
+        m_partyHint->hide();
+        return;
+    }
+    // Offer, never switch: an operator casually working a party station should
+    // not have the form rearranged under them.
+    const QDate today = QDate::currentDate();
+    for (const ContestOccurrence& occ : m_calendar.runningOn(today)) {
+        const ContestDef def = m_contests.find(occ.event.contestId);
+        if (!def.isValid()) continue;
+        const QString key = def.id + QLatin1Char('|') + occ.start.toString(Qt::ISODate);
+        if (m_model->settingValue("PARTY_HINT_DISMISSED") == key) continue;
+        m_partyHintId = def.id;
+        m_partyHintKey = key;
+        m_partyHintText->setText(tr("%1 is running now. Use its entry layout?")
+                                     .arg(def.name.toHtmlEscaped()));
+        m_partyHint->show();
+        return;
+    }
+    m_partyHint->hide();
+}
+
+void MainWindow::populatePartyMenu()
+{
+    if (!m_partyMenu || !m_model) return;
+    m_partyMenu->clear();
+    const QString active = m_model->settingValue("PARTY_LAYOUT_ID");
+
+    QAction* everyday = m_partyMenu->addAction(tr("Everyday layout"));
+    everyday->setCheckable(true);
+    everyday->setChecked(active.isEmpty());
+    connect(everyday, &QAction::triggered, this, &MainWindow::exitPartyLayout);
+    m_partyMenu->addSeparator();
+
+    for (const ContestDef& def : m_contests.all()) {
+        QAction* a = m_partyMenu->addAction(def.name.isEmpty() ? def.id : def.name);
+        a->setCheckable(true);
+        a->setChecked(active.compare(def.id, Qt::CaseInsensitive) == 0);
+        const QString id = def.id;
+        connect(a, &QAction::triggered, this, [this, id]() { startPartyLayout(id); });
+    }
+    if (m_contests.all().isEmpty())
+        m_partyMenu->addAction(tr("(no contest definitions loaded)"))->setEnabled(false);
 }
 
 // ── Quick-entry handlers ──────────────────────────────────────────────────
@@ -907,6 +1122,34 @@ void MainWindow::onSaveQso()
     if (!m_model) return;
     const QString call = m_callEdit->text().trimmed().toUpper();
     if (call.isEmpty()) return;
+
+    // QSO party layout (#18): warn once if a field the contest's exchange needs
+    // is empty, so the form and the stored record agree. A second Enter (or
+    // SAVE) for the same call logs it anyway; a contest can't wait on a dialog.
+    m_layoutCtl.clearMissing();
+    if (m_layoutCtl.isApplied()) {
+        const QHash<EntrySlot, QString> values{
+            {EntrySlot::RstRcvd, m_rstRcvdEdit->text()},
+            {EntrySlot::RstSent, m_rstSentEdit->text()},
+            {EntrySlot::Srx,     m_srxEdit->text()},
+            {EntrySlot::SrxText, m_srxStringEdit->text()},
+            {EntrySlot::Stx,     m_stxEdit->text()},
+            {EntrySlot::StxText, m_stxStringEdit->text()},
+        };
+        const QVector<EntrySlot> missing = missingOnSave(m_layoutCtl.current(), values);
+        if (!missing.isEmpty() && m_saveWarnedFor != call) {
+            QStringList names;
+            for (EntrySlot s : missing) {
+                m_layoutCtl.setMissing(s, true);
+                names << entrySlotName(m_layoutCtl.current(), s);
+            }
+            statusBar()->showMessage(
+                tr("%1 is empty. Press Enter or SAVE again to log it anyway.")
+                    .arg(names.join(QStringLiteral(", "))), 8000);
+            m_saveWarnedFor = call;
+            return;
+        }
+    }
 
     Qso q;
     q.call = call;
@@ -972,6 +1215,8 @@ void MainWindow::onSaveQso()
         m_model->setSetting("CONTEST_STX_NEXT", QString::number(next));
     }
     m_saveBtn->setEnabled(false);
+    m_saveWarnedFor.clear();
+    m_layoutCtl.clearMissing();
     refreshDupBadge();
     m_callEdit->setFocus();
 }

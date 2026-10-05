@@ -86,6 +86,10 @@ set(SHACKBOOK_SOURCES
     src/Band.h
     src/N1mmSpotParser.cpp
     src/N1mmSpotParser.h
+    src/ContestLayout.cpp
+    src/ContestLayout.h
+    src/ContestLayoutController.cpp
+    src/ContestLayoutController.h
     src/N1mmSpotClient.cpp
     src/N1mmSpotClient.h
     src/AetherSettingsReader.cpp
@@ -471,6 +475,22 @@ if(SHACKBOOK_TESTS)
     target_include_directories(n1mm_spot_test PRIVATE src)
     target_link_libraries(n1mm_spot_test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME n1mm_spot_test COMMAND n1mm_spot_test)
+
+    # QSO party layout (#18): the layout derived from ContestDef, and the
+    # controller's exact revert against real widgets (offscreen, no display).
+    add_executable(contest_layout_test
+        tests/contest_layout_test.cpp
+        src/ContestLayout.cpp
+        src/ContestLayout.h
+        src/ContestLayoutController.cpp
+        src/ContestLayoutController.h
+        src/ContestDef.cpp
+        src/ContestDef.h
+    )
+    target_include_directories(contest_layout_test PRIVATE src)
+    target_link_libraries(contest_layout_test PRIVATE Qt6::Core Qt6::Widgets)
+    add_test(NAME contest_layout_test COMMAND contest_layout_test)
+    set_tests_properties(contest_layout_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     # Bench tool, not a test: points the real client at an EXTERNAL rigctld
     # (the Python personas, or a real radio). Deliberately not add_test'd —
