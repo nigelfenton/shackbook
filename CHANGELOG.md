@@ -19,6 +19,10 @@ macOS DMG and attaches them to the GitHub release.
   look like success) **rigctld up but the radio not answering**, which points at the baud rate and
   model. Read-only: it never keys or tunes the radio. (#15)
 
+### Changed
+- **Built with Qt 6.8.3** (was 6.8.0): three patch releases of Qt bug fixes, and the same Qt as
+  AetherSDR. No change to the supported OS versions.
+
 ## [0.8.0] - 2026-10-04
 
 ### Added

@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  QT_VERSION: '6.8.0'                        # keep in step with release.yml
+  QT_VERSION: '6.8.3'                        # keep in step with release.yml
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   QT_QPA_PLATFORM: offscreen                 # belt and braces: nothing here should open a window
 
