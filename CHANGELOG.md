@@ -11,6 +11,12 @@ macOS DMG and attaches them to the GitHub release.
 ## [Unreleased]
 
 ### Added
+- **N1MM+ / DXLog bandmap spots over UDP**, a third spot source beside the DX cluster and
+  POTA (Settings → DX Cluster, off by default, port 12060). Spots carry the logger's contest
+  state, shown in a new Status column of the Spot Index: dupes are greyed rather than hidden,
+  needed multipliers are bold. A spot the logger removes is removed here too, for that band
+  only. Receive-only. If the port is already held (often by SmartSDR CAT), ShackBook says so
+  instead of sitting quietly. (#11)
 - **"Test connection" for Hamlib rigctld radios** (Settings → TCI, when following the radio via
   rigctld). It asks rigctld for the radio's frequency and mode at the Host and Port as typed, and
   says what came back, e.g. "Connected to rigctld at 127.0.0.1:4532: IC-9700 reports

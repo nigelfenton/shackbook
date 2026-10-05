@@ -40,6 +40,18 @@ public:
     // of entries removed.
     int  purgeExpired();
 
+    // Remove the spot for `call`, but only if it is on the same band as
+    // freqMhz. For sources that say explicitly when a spot is gone (N1MM+ /
+    // DXLog, #11), whose deletes are per (call, band): a delete for 20m must
+    // never take out the same call's 40m spot. When neither frequency is in an
+    // amateur band, they must be within 100 kHz instead. Returns true if a spot
+    // was removed.
+    //
+    // ⚠ The index still holds one spot per call, so a call spotted on two
+    // bands keeps only the latest, the same as it always has for the cluster
+    // and POTA.
+    bool remove(const QString& call, double freqMhz);
+
     // Find a spot matching the given radio freq + mode.  Returns nullopt
     // if no current spot is bucketed at that step.  When multiple spots
     // hash to the same bucket (rare), the most recent one wins.

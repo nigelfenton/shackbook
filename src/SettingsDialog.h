@@ -96,6 +96,8 @@ private:
     // POTA (HTTP poll, independent of cluster)
     QCheckBox*  m_potaEnable{};
     QSpinBox*   m_potaPollSec{};
+    QCheckBox*  m_n1mmEnable{};
+    QSpinBox*   m_n1mmPort{};
 
     // Callsign lookup
     QCheckBox*  m_lkWorkedBefore{};

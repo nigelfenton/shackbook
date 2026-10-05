@@ -1,4 +1,5 @@
 #include "SpotIndex.h"
+#include "Band.h"
 
 #include <QDateTime>
 #include <cmath>
@@ -84,6 +85,25 @@ int SpotIndex::purgeExpired()
     }
     if (removed > 0) emit spotsRemoved(removed);
     return removed;
+}
+
+bool SpotIndex::remove(const QString& call, double freqMhz)
+{
+    auto it = m_byCall.find(call);
+    if (it == m_byCall.end()) return false;
+
+    const QString heldBand = bandForMhz(it->freqMhz);
+    const QString gone     = bandForMhz(freqMhz);
+    const bool sameBand = !heldBand.isEmpty() || !gone.isEmpty()
+                              ? heldBand == gone
+                              : qAbs(it->freqMhz - freqMhz) < 0.1;
+    if (!sameBand) return false;
+
+    const qint64 key = bucketKey(it->freqMhz, it->mode);
+    if (m_byBucket.value(key) == it->call) m_byBucket.remove(key);
+    m_byCall.erase(it);
+    emit spotsRemoved(1);
+    return true;
 }
 
 std::optional<SpotData> SpotIndex::findAt(double freqMhz, const QString& adifMode) const
