@@ -10,7 +10,17 @@ macOS DMG and attaches them to the GitHub release.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-05
+
 ### Added
+- **CW keyer** (Settings → CW keyer, off by default). F1–F8 send CW messages over TCI
+  (`cw_macros`) with `{CALL}`, `{MYCALL}`, `{RST}`, `{NR}`, `{EXCH}` and `{NAME}`, cut numbers
+  (5NN, TT1), the radio's speed with −/+, and **Esc or STOP to stop**. The first ShackBook
+  feature that can transmit, so it only ever sends on an explicit key or click (never on QSO
+  save, a spot or a timer), only in a CW mode, and a new message replaces one still going out.
+  If the radio doesn't key (e.g. a TCI server without a CW keyer, like AetherSDR's demo radio),
+  the panel says so. Tested on air on a FLEX-6500 via AetherSDR. Contributed by Tony KX3H.
+  (#32, #34)
 - **QSO party entry layout** (Tools → QSO Party Layout). Picking a contest puts its exchange
   fields first in tab order and labels the exchange boxes for it (e.g. "←COUNTY"). Fields the
   contest doesn't use are dimmed and skipped by Tab, never hidden. A banner shows the layout is on
@@ -36,6 +46,12 @@ macOS DMG and attaches them to the GitHub release.
 ### Changed
 - **Built with Qt 6.8.3** (was 6.8.0): three patch releases of Qt bug fixes, and the same Qt as
   AetherSDR. No change to the supported OS versions.
+
+### Fixed
+- **The TCI link no longer drops and reopens once a second after a reconnect.** A reconnect timer
+  outlived the connection it was for, so after any reconnect (or saving Settings) the link
+  churned indefinitely, making frequency, mode, TX state and the MQTT status flap and forgetting
+  the measured TX power. Found and fixed by Tony KX3H. (#33)
 
 ## [0.8.0] - 2026-10-04
 
