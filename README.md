@@ -39,8 +39,9 @@ Or build from source — see [Build](#build).
 - **Radios without TCI** — Icom, Yaesu, Kenwood and anything else
   [Hamlib](https://hamlib.github.io/) drives, followed through its `rigctld`
   (Settings → TCI → *Follow radio via*). Hamlib reports the **radio's own model**, so
-  contacts are attributed correctly with no nickname needed. ⚠ Hamlib is not included —
-  see [Following a non-TCI radio](#following-a-non-tci-radio).
+  contacts are attributed correctly with no nickname needed. Pick the rig, serial port and
+  baud from lists, and press **Test connection** to see what the radio actually reports.
+  ⚠ Hamlib is not included — see [Following a non-TCI radio](#following-a-non-tci-radio).
 - Quick QSO entry: callsign + RST sent/received + comment, then `SAVE`
 - Real-time **duplicate-check** warning as you type a callsign
 - Full-fidelity QSO editor (Core / Other Station / My Station / Contest / Notes & QSL)
@@ -52,6 +53,35 @@ Or build from source — see [Build](#build).
   than the rig — AetherSDR answers "AetherSDR" for any radio behind it — you
   can set a **nickname** per TCI host/port to tell two rigs apart. A QSO logged
   with no radio connected records none, rather than guessing.
+- **Logs the power you actually ran** — with TCI, a new QSO takes the forward power the
+  radio measured on your last transmission, not a fixed default (Settings → Operator).
+
+### Contesting
+- **CW keyer** (Settings → CW keyer, off by default) — **F1–F8** send CW messages
+  through the radio over TCI, N1MM-style: `CQ {MYCALL} {MYCALL} TEST`, `{RST} {EXCH}`,
+  `TU {MYCALL}` and so on. Tokens fill from the entry form (`{CALL}`, `{MYCALL}`, `{RST}`,
+  `{NR}`, `{EXCH}`, `{NAME}`), with cut numbers (599 → 5NN, 001 → TT1). The radio's speed
+  shows on the panel with −/+, and **Esc** (or the STOP button) stops it at once.
+  Because this is the one part of ShackBook that can transmit, it is careful about it:
+  - it only ever sends when you press an F-key or click a message — never when a QSO is
+    saved, a spot is clicked, or on a timer;
+  - only when the radio is in a CW mode;
+  - a new message replaces one still going out, and turning the keyer off, closing
+    ShackBook or losing the link stops the radio first;
+  - if the radio doesn't key (a TCI server without a CW keyer), the panel says so.
+
+  Works with any TCI server that implements the CW macro commands — tested on a
+  FLEX-6500 through AetherSDR. AetherSDR's demo radio can't transmit, so it (correctly)
+  won't key. Contributed by Tony KX3H.
+- **QSO party layout** (Tools → QSO Party Layout) — puts a party's exchange first in the
+  entry form, in tab order (CALL → ←RST → ←COUNTY …), with the exchange boxes labelled
+  for it. Fields the party doesn't use are dimmed and skipped by Tab, never hidden. A
+  banner shows it is on, and **Exit layout** puts the form and your contest settings back
+  exactly as they were. It survives a restart; while a party is running ShackBook offers
+  its layout, but never switches by itself. Saving with a needed exchange field empty
+  warns once — press Enter again to log it anyway.
+- **County worked/needed table and contest calendar** (Tools → QSO Party…)
+- **Contest mode** with sent/received serials and exchange, and **Cabrillo 3.0 export**
 
 ### Callsign lookup
 Three-tier autofill of an empty QSO's name / QTH / grid / state / country:
@@ -63,6 +93,14 @@ Three-tier autofill of an empty QSO's name / QTH / grid / state / country:
 - **Awards panel** (Tools → Awards): DXCC / WAS / WAC / WAZ / grids, worked vs confirmed, chase lists
 - **DX cluster** client with configurable login suffix and duplicate-login handling
 - **POTA** spot integration
+- **N1MM+ / DXLog bandmap spots** over UDP (Settings → DX Cluster, port 12060) — spots
+  carry the logger's contest state, shown in the Spot Index's Status column: dupes
+  greyed, needed multipliers bold. Spots the logger removes are removed here too.
+  Receive-only. If another program (often SmartSDR CAT) already holds the port,
+  ShackBook says so — pick another port and add it to N1MM's broadcast list.
+- **Double-click a spot to tune** the radio to it (Tools → Show Spot Index; off by
+  default, Settings → TCI). It moves the frequency and, optionally, the mode — never
+  transmits.
 - **"How far?"** button — opens a PSK Reporter map of who's hearing you, filtered to your band
 - **Section map** (Maps menu) — native ARRL/RAC section map, N3FJP-style
 
@@ -84,6 +122,12 @@ treats it that way — all of this happens on its own, with nothing to configure
 - **ADIF import** (File → Import ADIF) — whole-file, deduplicated, fast (proven on 16k+ record logs)
 - **ADIF 3.1.4 export** with the full standard field set
 - **Cabrillo 3.0 export** with operator-defined header categories
+
+### Home Assistant (MQTT)
+Settings → MQTT publishes shack status to a broker on your LAN, with Home Assistant
+discovery: online/offline, radio connected, frequency, mode and band, transmitting
+(an on-air light), and today's QSO count. Details of the last QSO are published only
+if you switch that on.
 
 ### Server (optional, for multi-station / Field Day)
 A headless companion (`shackbook-server`) that:
@@ -112,8 +156,8 @@ The resulting binaries are `build/ShackBook` (the logbook) and
 `build/shackbook-server` (the optional server), plus `.exe` on Windows.
 On Windows, `build.bat` also handles the MSVC environment setup.
 
-The unit tests are opt-in, and cover the durability layer, the APRS decoder,
-and per-QSO radio attribution:
+The unit tests are opt-in locally (CI runs them on Linux and Windows for every
+push and pull request):
 
 ```sh
 cmake -B build-tests -G Ninja -DSHACKBOOK_TESTS=ON
@@ -143,12 +187,19 @@ and if you already run WSJT-X or fldigi you almost certainly have it already.
    ```
    `rigctl --list` shows the model number for your rig.
 3. In ShackBook, **Settings → TCI → Follow radio via → Hamlib rigctld**. The default
-   host and port (`127.0.0.1:4532`) suit a local radio.
+   host and port (`127.0.0.1:4532`) suit a local radio. Pick your **radio model**, **serial
+   port** and **baud** from the lists and ShackBook shows the exact command to run.
+4. Press **Test connection**. It asks the radio for its frequency and mode and shows what
+   came back — e.g. *"IC-9700 reports 435.645935 MHz, FM"*. If something is wrong it says
+   which link: nothing listening, a serial-port error, or (the case that otherwise looks
+   like success) **rigctld running but the radio not answering**, which almost always means
+   the baud rate or model is wrong.
 
 ShackBook tells you if it cannot find Hamlib, and lets you point at it if you installed it
-somewhere unusual. **It will not start `rigctld` for you** — that program takes the serial
-port exclusively, and a second copy fighting the first is a classic cause of CAT failure
-mid-contest. Start it yourself, once, and leave it running.
+somewhere unusual. If nothing is serving the port when you connect, it **offers to start
+`rigctld` for you** with the model, port and baud you picked — it asks first, since that
+program takes the serial port — and stops it again when ShackBook exits. A `rigctld` that is
+already running (your own, or one shared with WSJT-X or fldigi) is never touched.
 
 ## Database location
 
