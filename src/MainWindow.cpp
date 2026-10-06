@@ -25,9 +25,15 @@
 #include "AetherSettingsReader.h"
 #include "MqttPublisher.h"
 #include "ShackStatus.h"
+#include "CwKeyer.h"
+#include "CwKeyerPanel.h"
+#include "CwKeyerSettings.h"
+#include "CwSender.h"
 
+#include <QApplication>
 #include <QDialog>
 #include <QPlainTextEdit>
+#include <QShortcut>
 #include <QTextCursor>
 #include <QTimer>
 
@@ -40,6 +46,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QInputDialog>
 #include <QProgressDialog>
@@ -441,9 +448,120 @@ MainWindow::MainWindow(QWidget* parent)
     applyN1mmConfigFromSettings();
     applyLookupConfigFromSettings();
     applyMqttConfigFromSettings();
+
+    buildCwKeyer();
+    applyCwKeyerFromSettings();
 }
 
-MainWindow::~MainWindow() = default;
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    stopCwBeforeLinkGoes();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::stopCwBeforeLinkGoes()
+{
+    if (!m_cwKeyer || !m_cwKeyer->radioMayBeSending()) return;
+    const bool wasTransmitting = m_tci->transmitting();
+    m_cwPanel->stopNow();
+
+    // Measured on a FLEX-6500 via AetherSDR v26.10.1: a stop followed AT
+    // ONCE by a disconnect is lost and the message runs to the end (16 s);
+    // the same stop with 250 ms before the disconnect ends it in ~90 ms.
+    // So hold the link until the radio has unkeyed, which proves the stop
+    // was carried out, or 250 ms if it was not transmitting to begin with.
+    // Capped, and user input is held off meanwhile so nothing else can
+    // start in the middle of a disconnect.
+    QElapsedTimer t;
+    t.start();
+    while (t.elapsed() < 600) {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 20);
+        if (wasTransmitting ? !m_tci->transmitting() : t.elapsed() >= 250) break;
+    }
+}
+
+MainWindow::~MainWindow()
+{
+    // Closing ShackBook mid-message must not leave the radio keying: turning
+    // the keyer off sends a stop if, and only if, the radio may be sending.
+    // The TCI client is still alive here; children are deleted after this.
+    if (m_cwKeyer) m_cwKeyer->setEnabled(false);
+}
+
+// ── CW keyer (#32) ─────────────────────────────────────────────────────
+
+void MainWindow::buildCwKeyer()
+{
+    m_cwSender = std::make_unique<TciCwSender>(m_tci);
+    m_cwKeyer  = new CwKeyer(m_cwSender.get(), [this] { return cwContext(); }, this);
+    m_cwPanel  = new CwKeyerPanel(m_cwKeyer, this);
+    addDockWidget(Qt::BottomDockWidgetArea, m_cwPanel);
+    m_cwPanel->hide();
+    m_cwStopFilter = new CwStopKeyFilter(m_cwPanel, this);
+
+    connect(m_tci, &TciClient::transmittingChanged, m_cwKeyer, &CwKeyer::onTransmittingChanged);
+    connect(m_tci, &TciClient::connectionChanged,   m_cwKeyer, &CwKeyer::onConnectionChanged);
+    connect(m_tci, &TciClient::cwSpeedChanged,      m_cwPanel, &CwKeyerPanel::setSpeed);
+    connect(m_tci, &TciClient::connectionChanged, this, [this](bool) { refreshCwPanelRadioState(); });
+    connect(m_tci, &TciClient::modeChanged,       this, [this](const QString&) { refreshCwPanelRadioState(); });
+}
+
+void MainWindow::applyCwKeyerFromSettings()
+{
+    if (!m_cwKeyer || !m_model) return;
+    const CwKeyerConfig cfg = loadCwKeyerConfig(
+        [this](const QString& k, const QString& d) { return m_model->settingValue(k, d); });
+
+    m_cwKeyer->setMacros(cfg.macros);
+    m_cwKeyer->setCutOptions(cfg.cut);
+    m_cwPanel->refreshLabels();
+
+    // Disabling sends a stop if a message is in progress; enabling asks the
+    // radio for its speed. Neither happens when nothing changed.
+    m_cwKeyer->setEnabled(cfg.enabled);
+    m_cwPanel->setVisible(cfg.enabled);
+
+    if (cfg.enabled && m_cwShortcuts.isEmpty()) {
+        // Window-scoped: F1-F8 send only while a ShackBook main-window widget
+        // has focus. No auto-repeat: holding F1 must not send CQ over and
+        // over, each one replacing the last.
+        for (int i = 0; i < 8; ++i) {
+            auto* sc = new QShortcut(QKeySequence(Qt::Key_F1 + i), this);
+            sc->setContext(Qt::WindowShortcut);
+            sc->setAutoRepeat(false);
+            connect(sc, &QShortcut::activated, this, [this, i] { m_cwPanel->trigger(i); });
+            m_cwShortcuts << sc;
+        }
+        qApp->installEventFilter(m_cwStopFilter);
+    } else if (!cfg.enabled && !m_cwShortcuts.isEmpty()) {
+        qDeleteAll(m_cwShortcuts);
+        m_cwShortcuts.clear();
+        qApp->removeEventFilter(m_cwStopFilter);
+    }
+    refreshCwPanelRadioState();
+}
+
+void MainWindow::refreshCwPanelRadioState()
+{
+    if (!m_cwPanel) return;
+    m_cwPanel->setRadioState(m_tci->connected(), m_tci->currentMode(), !usingRigctld());
+    m_cwPanel->setSpeed(m_tci->cwSpeedWpm());
+}
+
+CwContext MainWindow::cwContext() const
+{
+    CwContext c;
+    if (m_callEdit)      c.call   = m_callEdit->text();
+    if (m_model)         c.myCall = m_model->myCall();
+    if (m_rstSentEdit)   c.rst    = m_rstSentEdit->text();
+    // The serial and exchange live in the contest row, hidden outside
+    // contest mode: what is left in it then must not go out on F2.
+    c.contest = m_model && m_model->contestMode();
+    if (c.contest && m_stxEdit)       c.nr   = m_stxEdit->text();
+    if (c.contest && m_stxStringEdit) c.exch = m_stxStringEdit->text();
+    if (m_model)         c.name   = m_model->settingValue(QStringLiteral("CW_NAME"));
+    return c;
+}
 
 // ── Menus ──────────────────────────────────────────────────────────────
 
@@ -1448,6 +1566,7 @@ void MainWindow::onSettings()
         applyN1mmConfigFromSettings();
         applyLookupConfigFromSettings();
         applyMqttConfigFromSettings();
+        applyCwKeyerFromSettings();
         refreshStatusBar();
         // The source may have changed from TCI to rigctld or back.
         refreshLinkLabel();
@@ -1578,6 +1697,7 @@ void MainWindow::onSwitchLog()
     refreshTable();
     refreshStatusBar();
     applyMqttConfigFromSettings();   // a different log may have a different callsign
+    applyCwKeyerFromSettings();      // and its own keyer enable and messages
 }
 
 void MainWindow::onShowAwards()
@@ -1786,6 +1906,9 @@ bool MainWindow::usingRigctld() const
 void MainWindow::connectActiveSource()
 {
     if (!m_model) return;
+    // Both branches can drop a live TCI link: switching to rigctld closes it,
+    // and connectToServer() replaces it. Stop any CW first (#32).
+    stopCwBeforeLinkGoes();
 
     // Only one link at a time. Two clients following one radio would poll the
     // same CAT port against each other — the "several programs fighting over
@@ -1876,6 +1999,8 @@ void MainWindow::onDisconnectTci()
 {
     // Stop both regardless of which is selected: if the setting changed while
     // one was live, the other would otherwise be left connected invisibly.
+    // CW first: after the disconnect a stop has nowhere to go (#32).
+    stopCwBeforeLinkGoes();
     m_tci->disconnectFromServer();
     m_rigctld->disconnectFromServer();
     // Stop a rigctld WE started -- otherwise disconnecting would leave it
@@ -1912,6 +2037,11 @@ void MainWindow::onTciFrequencyChanged(double mhz)
 
 void MainWindow::onTciModeChanged(const QString& mode)
 {
+    // TciClient reports "" when the link drops, so the CW keyer's mode gate
+    // closes. For logging, the last mode the radio reported stays the best
+    // guess: an empty one would log QSOs with no mode and flip a 599 RST to
+    // 59 on every reconnect.
+    if (mode.isEmpty()) return;
     m_rawTciMode = mode;
     QString adifMode, adifSub;
     LogbookModel::adifModeFromTciMode(mode, &adifMode, &adifSub);

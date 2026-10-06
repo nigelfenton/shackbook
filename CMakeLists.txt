@@ -36,6 +36,13 @@ set(SHACKBOOK_SOURCES
     src/MainWindow.h
     src/TciClient.cpp
     src/TciClient.h
+    src/CwSender.h
+    src/CwKeyer.cpp
+    src/CwKeyer.h
+    src/CwKeyerSettings.cpp
+    src/CwKeyerSettings.h
+    src/CwKeyerPanel.cpp
+    src/CwKeyerPanel.h
     src/TxPowerTracker.cpp
     src/TxPowerTracker.h
     src/MqttPacket.cpp
@@ -332,6 +339,56 @@ if(SHACKBOOK_TESTS)
     target_link_libraries(tx_power_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
     add_test(NAME tx_power_test COMMAND tx_power_test)
 
+    # CW keyer (#32): the TCI commands that key the transmitter — exact bytes,
+    # refusals, nothing on connect, nothing queued across a reconnect.
+    add_executable(cw_send_test
+        tests/cw_send_test.cpp
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(cw_send_test PRIVATE src)
+    target_link_libraries(cw_send_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
+    add_test(NAME cw_send_test COMMAND cw_send_test)
+
+    # CW keyer (#32): macro expansion, the transmit-safety gates, and the
+    # send/stop state machine against a recording fake sender.
+    add_executable(cw_keyer_test
+        tests/cw_keyer_test.cpp
+        src/CwKeyer.cpp
+        src/CwKeyer.h
+        src/CwSender.h
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(cw_keyer_test PRIVATE src)
+    target_link_libraries(cw_keyer_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
+    add_test(NAME cw_keyer_test COMMAND cw_keyer_test)
+
+    # CW keyer (#32): settings round trip, the panel headless (offscreen),
+    # and Esc through the application-wide stop filter.
+    add_executable(cw_panel_test
+        tests/cw_panel_test.cpp
+        src/CwKeyer.cpp
+        src/CwKeyer.h
+        src/CwKeyerPanel.cpp
+        src/CwKeyerPanel.h
+        src/CwKeyerSettings.cpp
+        src/CwKeyerSettings.h
+        src/CwSender.h
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(cw_panel_test PRIVATE src)
+    target_link_libraries(cw_panel_test PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets)
+    add_test(NAME cw_panel_test COMMAND cw_panel_test)
+    set_tests_properties(cw_panel_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     # MQTT shack status (#24): packet bytes, HA discovery, and the publisher
     # against a loopback fake broker.
     add_executable(mqtt_test
@@ -502,6 +559,18 @@ if(SHACKBOOK_TESTS)
     )
     target_include_directories(rigctld_live_probe PRIVATE src)
     target_link_libraries(rigctld_live_probe PRIVATE Qt6::Core Qt6::Network)
+
+    # Bench tool, not a test: times the CW keyer's TCI commands (#32) against
+    # a REAL TCI server. Read-only unless given --transmit. Not add_test'd.
+    add_executable(tci_cw_live_probe
+        tests/tci_cw_live_probe.cpp
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(tci_cw_live_probe PRIVATE src)
+    target_link_libraries(tci_cw_live_probe PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
 
     add_executable(radio_attribution_test
         tests/radio_attribution_test.cpp
