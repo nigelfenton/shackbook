@@ -1325,6 +1325,7 @@ void MainWindow::onSaveQso()
     // so the next freq change will autofill afresh.
     m_lastAutofilledCall.clear();
     m_lastAutofilledComment.clear();
+    m_lastAutofillBucketHz = 0;
     m_lookupFill = Qso{};
     m_lookupFillCall.clear();
     if (m_model->contestMode()) {
@@ -2065,6 +2066,32 @@ void MainWindow::onTciModeChanged(const QString& mode)
 
 // ── Spot autofill (Phase 2) ──────────────────────────────────────────────
 
+// Rounded frequency (Hz) of the radio's current freq, using the same
+// mode-dependent step SpotIndex buckets by, so "same bucket" here means
+// exactly what it means in the index.
+qint64 MainWindow::autofillBucketHz() const
+{
+    return SpotIndex::bucketHz(m_curFreqMhz, m_curMode);
+}
+
+// Drop an auto-fill that no longer belongs to where the radio is. Only
+// touches fields we own: a call or comment the operator typed is left alone
+// by the ownership checks in tryAutofillFromSpot() before this is reached.
+void MainWindow::clearSpotAutofill()
+{
+    if (m_callEdit) m_callEdit->clear();
+    if (m_commentEdit) {
+        const QString current = m_commentEdit->text().trimmed();
+        if (current.isEmpty() || current == m_lastAutofilledComment.trimmed())
+            m_commentEdit->clear();
+    }
+    m_lastAutofilledCall.clear();
+    m_lastAutofilledComment.clear();
+    m_lastAutofillBucketHz = 0;
+    if (m_saveBtn) m_saveBtn->setEnabled(false);
+    refreshDupBadge();
+}
+
 void MainWindow::tryAutofillFromSpot()
 {
     if (!m_spotIndex || !m_callEdit) return;
@@ -2097,8 +2124,18 @@ void MainWindow::tryAutofillFromSpot()
 
     auto hit = m_spotIndex->findAt(m_curFreqMhz, m_curMode);
     if (!hit) {
-        // No matching spot.  Leave any previous auto-fill in place — the
-        // operator may have done a small QSY around the same station.
+        // No matching spot. Keep a previous auto-fill only while the radio is
+        // still in the bucket that auto-fill came from — that is the "wiggle
+        // around the same station" case the index's own step is sized for.
+        // Leaving the bucket is a move to a different, unspotted station, and
+        // keeping the old call and comment there would attach them to the
+        // wrong QSO on save.
+        if (m_lastAutofillBucketHz != 0 &&
+            autofillBucketHz() != m_lastAutofillBucketHz) {
+            clearSpotAutofill();
+            logLookup(QString("no spot — cleared stale auto-fill %1").arg(currentCall));
+            return;
+        }
         logLookup(currentCall.isEmpty()
                       ? QString("no spot in index")
                       : QString("no spot — keeping previous auto-fill %1").arg(currentCall));
@@ -2109,6 +2146,7 @@ void MainWindow::tryAutofillFromSpot()
     // there (ours or empty) with the new spot.
     m_callEdit->setText(hit->call);
     m_lastAutofilledCall = hit->call;
+    m_lastAutofillBucketHz = autofillBucketHz();
     m_saveBtn->setEnabled(true);
     refreshDupBadge();
     startCallsignLookup(hit->call);

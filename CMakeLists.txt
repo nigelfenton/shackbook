@@ -518,6 +518,17 @@ if(SHACKBOOK_TESTS)
     target_link_libraries(rigctld_connection_test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME rigctld_connection_test COMMAND rigctld_connection_test)
 
+    # Spot auto-fill buckets: the rule that decides whether a QSY is a
+    # wiggle around the same station or a move to a different one.
+    add_executable(spot_autofill_bucket_test
+        tests/spot_autofill_bucket_test.cpp
+        src/SpotIndex.cpp
+        src/SpotIndex.h
+    )
+    target_include_directories(spot_autofill_bucket_test PRIVATE src)
+    target_link_libraries(spot_autofill_bucket_test PRIVATE Qt6::Core)
+    add_test(NAME spot_autofill_bucket_test COMMAND spot_autofill_bucket_test)
+
     # N1MM+ / DXLog spots over UDP (#11): the parser, per-band delete in
     # SpotIndex, and the client end to end on loopback.
     add_executable(n1mm_spot_test

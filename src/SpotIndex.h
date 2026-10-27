@@ -63,6 +63,12 @@ public:
     // the same rounding rule outside the index (e.g. UI display).
     static int stepHzForMode(const QString& adifMode);
 
+    // The radio freq rounded to this mode's step, in Hz — the frequency half
+    // of a bucket, without the mode tag. Callers outside the index use it to
+    // ask "is the radio still where that spot was?" with exactly the index's
+    // own notion of "same place". Returns 0 when the mode has no step.
+    static qint64 bucketHz(double freqMhz, const QString& adifMode);
+
     // Snapshot of all current spots — used by the diagnostic Tools →
     // Show Spot Index dialog.  Sorted by freq ascending.
     QVector<SpotData> snapshot() const;
