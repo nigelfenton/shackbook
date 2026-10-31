@@ -179,6 +179,10 @@ private:
     void publishRadioStatus();
     void publishQsoStatus(qint64 addedQsoId = -1);
     void tryAutofillFromSpot();
+    // Rounded freq (Hz) of the radio now, on SpotIndex's step for the mode.
+    qint64 autofillBucketHz() const;
+    // Drop a spot auto-fill the radio has moved away from.
+    void clearSpotAutofill();
     // Kick the callsign-lookup chain (worked-before → cty.dat → online).
     // Results land in m_lookupFill and merge into empty fields at save.
     void startCallsignLookup(const QString& call);
@@ -229,6 +233,12 @@ private:
     // operator's typed input (must be left alone).
     QString m_lastAutofilledCall;
     QString m_lastAutofilledComment;
+    // Rounded frequency (Hz) of the spot those two came from, using the
+    // index's own step for the mode. A QSY that leaves this bucket is a
+    // move to a different station, so the stale auto-fill is dropped; a
+    // wiggle inside it is the same station and keeps it. 0 = nothing
+    // auto-filled.
+    qint64  m_lastAutofillBucketHz{0};
 
     // Callsign lookup chain
     CtyDat           m_cty;              // offline prefix → country/zones

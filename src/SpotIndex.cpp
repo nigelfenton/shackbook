@@ -29,6 +29,13 @@ qint64 SpotIndex::roundedHz(double freqMhz, int stepHz)
     return ((hz + stepHz / 2) / stepHz) * stepHz;
 }
 
+qint64 SpotIndex::bucketHz(double freqMhz, const QString& adifMode)
+{
+    const int step = stepHzForMode(adifMode);
+    if (step <= 0) return 0;
+    return roundedHz(freqMhz, step);
+}
+
 qint64 SpotIndex::bucketKey(double freqMhz, const QString& adifMode)
 {
     const int step = stepHzForMode(adifMode);
