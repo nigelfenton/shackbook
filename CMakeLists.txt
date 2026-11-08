@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(ShackBook
-    VERSION 0.7.0
+    VERSION 0.9.0
     DESCRIPTION "Standalone ham radio logbook with TCI integration"
     LANGUAGES CXX)
 
@@ -36,10 +36,27 @@ set(SHACKBOOK_SOURCES
     src/MainWindow.h
     src/TciClient.cpp
     src/TciClient.h
+    src/CwSender.h
+    src/CwKeyer.cpp
+    src/CwKeyer.h
+    src/CwKeyerSettings.cpp
+    src/CwKeyerSettings.h
+    src/CwKeyerPanel.cpp
+    src/CwKeyerPanel.h
+    src/TxPowerTracker.cpp
+    src/TxPowerTracker.h
+    src/MqttPacket.cpp
+    src/MqttPacket.h
+    src/MqttPublisher.cpp
+    src/MqttPublisher.h
+    src/ShackStatus.cpp
+    src/ShackStatus.h
     src/TciDiscovery.cpp
     src/TciDiscovery.h
     src/RigctldClient.cpp
     src/RigctldClient.h
+    src/RigctldConnectionTest.cpp
+    src/RigctldConnectionTest.h
     src/HamlibRigList.cpp
     src/HamlibRigList.h
     src/RigctldSupervisor.cpp
@@ -73,6 +90,15 @@ set(SHACKBOOK_SOURCES
     src/SpotData.h
     src/SpotIndex.cpp
     src/SpotIndex.h
+    src/Band.h
+    src/N1mmSpotParser.cpp
+    src/N1mmSpotParser.h
+    src/ContestLayout.cpp
+    src/ContestLayout.h
+    src/ContestLayoutController.cpp
+    src/ContestLayoutController.h
+    src/N1mmSpotClient.cpp
+    src/N1mmSpotClient.h
     src/AetherSettingsReader.cpp
     src/AetherSettingsReader.h
     src/DxClusterClient.cpp
@@ -307,10 +333,90 @@ if(SHACKBOOK_TESTS)
         tests/tci_tune_test.cpp
         src/TciClient.cpp
         src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
     )
     target_include_directories(tci_tune_test PRIVATE src)
     target_link_libraries(tci_tune_test PRIVATE Qt6::Core Qt6::WebSockets)
     add_test(NAME tci_tune_test COMMAND tci_tune_test)
+
+    # Measured TX power (#23): the tracker's rules, and TciClient parsing
+    # tx_sensors/trx against a loopback fake TCI server.
+    add_executable(tx_power_test
+        tests/tx_power_test.cpp
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+        src/TciClient.cpp
+        src/TciClient.h
+    )
+    target_include_directories(tx_power_test PRIVATE src)
+    target_link_libraries(tx_power_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
+    add_test(NAME tx_power_test COMMAND tx_power_test)
+
+    # CW keyer (#32): the TCI commands that key the transmitter — exact bytes,
+    # refusals, nothing on connect, nothing queued across a reconnect.
+    add_executable(cw_send_test
+        tests/cw_send_test.cpp
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(cw_send_test PRIVATE src)
+    target_link_libraries(cw_send_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
+    add_test(NAME cw_send_test COMMAND cw_send_test)
+
+    # CW keyer (#32): macro expansion, the transmit-safety gates, and the
+    # send/stop state machine against a recording fake sender.
+    add_executable(cw_keyer_test
+        tests/cw_keyer_test.cpp
+        src/CwKeyer.cpp
+        src/CwKeyer.h
+        src/CwSender.h
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(cw_keyer_test PRIVATE src)
+    target_link_libraries(cw_keyer_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
+    add_test(NAME cw_keyer_test COMMAND cw_keyer_test)
+
+    # CW keyer (#32): settings round trip, the panel headless (offscreen),
+    # and Esc through the application-wide stop filter.
+    add_executable(cw_panel_test
+        tests/cw_panel_test.cpp
+        src/CwKeyer.cpp
+        src/CwKeyer.h
+        src/CwKeyerPanel.cpp
+        src/CwKeyerPanel.h
+        src/CwKeyerSettings.cpp
+        src/CwKeyerSettings.h
+        src/CwSender.h
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(cw_panel_test PRIVATE src)
+    target_link_libraries(cw_panel_test PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets)
+    add_test(NAME cw_panel_test COMMAND cw_panel_test)
+    set_tests_properties(cw_panel_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    # MQTT shack status (#24): packet bytes, HA discovery, and the publisher
+    # against a loopback fake broker.
+    add_executable(mqtt_test
+        tests/mqtt_test.cpp
+        src/MqttPacket.cpp
+        src/MqttPacket.h
+        src/MqttPublisher.cpp
+        src/MqttPublisher.h
+        src/ShackStatus.cpp
+        src/ShackStatus.h
+    )
+    target_include_directories(mqtt_test PRIVATE src)
+    target_link_libraries(mqtt_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME mqtt_test COMMAND mqtt_test)
 
     add_executable(contest_county_test
         tests/contest_county_test.cpp
@@ -353,6 +459,8 @@ if(SHACKBOOK_TESTS)
         src/TciDiscovery.h
         src/TciClient.cpp
         src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
     )
     target_include_directories(tci_discovery_test PRIVATE src)
     target_link_libraries(tci_discovery_test PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
@@ -413,6 +521,59 @@ if(SHACKBOOK_TESTS)
     target_link_libraries(rigctld_client_test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME rigctld_client_test COMMAND rigctld_client_test)
 
+    # "Test connection" in Settings (#15): every outcome against fake rigctlds,
+    # and a pin that it only ever sends read commands.
+    add_executable(rigctld_connection_test
+        tests/rigctld_connection_test.cpp
+        src/RigctldConnectionTest.cpp
+        src/RigctldConnectionTest.h
+    )
+    target_include_directories(rigctld_connection_test PRIVATE src)
+    target_link_libraries(rigctld_connection_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME rigctld_connection_test COMMAND rigctld_connection_test)
+
+    # Spot auto-fill buckets: the rule that decides whether a QSY is a
+    # wiggle around the same station or a move to a different one.
+    add_executable(spot_autofill_bucket_test
+        tests/spot_autofill_bucket_test.cpp
+        src/SpotIndex.cpp
+        src/SpotIndex.h
+    )
+    target_include_directories(spot_autofill_bucket_test PRIVATE src)
+    target_link_libraries(spot_autofill_bucket_test PRIVATE Qt6::Core)
+    add_test(NAME spot_autofill_bucket_test COMMAND spot_autofill_bucket_test)
+
+    # N1MM+ / DXLog spots over UDP (#11): the parser, per-band delete in
+    # SpotIndex, and the client end to end on loopback.
+    add_executable(n1mm_spot_test
+        tests/n1mm_spot_test.cpp
+        src/N1mmSpotParser.cpp
+        src/N1mmSpotParser.h
+        src/N1mmSpotClient.cpp
+        src/N1mmSpotClient.h
+        src/SpotIndex.cpp
+        src/SpotIndex.h
+    )
+    target_include_directories(n1mm_spot_test PRIVATE src)
+    target_link_libraries(n1mm_spot_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME n1mm_spot_test COMMAND n1mm_spot_test)
+
+    # QSO party layout (#18): the layout derived from ContestDef, and the
+    # controller's exact revert against real widgets (offscreen, no display).
+    add_executable(contest_layout_test
+        tests/contest_layout_test.cpp
+        src/ContestLayout.cpp
+        src/ContestLayout.h
+        src/ContestLayoutController.cpp
+        src/ContestLayoutController.h
+        src/ContestDef.cpp
+        src/ContestDef.h
+    )
+    target_include_directories(contest_layout_test PRIVATE src)
+    target_link_libraries(contest_layout_test PRIVATE Qt6::Core Qt6::Widgets)
+    add_test(NAME contest_layout_test COMMAND contest_layout_test)
+    set_tests_properties(contest_layout_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
     # Bench tool, not a test: points the real client at an EXTERNAL rigctld
     # (the Python personas, or a real radio). Deliberately not add_test'd —
     # it needs something running to talk to.
@@ -423,6 +584,18 @@ if(SHACKBOOK_TESTS)
     )
     target_include_directories(rigctld_live_probe PRIVATE src)
     target_link_libraries(rigctld_live_probe PRIVATE Qt6::Core Qt6::Network)
+
+    # Bench tool, not a test: times the CW keyer's TCI commands (#32) against
+    # a REAL TCI server. Read-only unless given --transmit. Not add_test'd.
+    add_executable(tci_cw_live_probe
+        tests/tci_cw_live_probe.cpp
+        src/TciClient.cpp
+        src/TciClient.h
+        src/TxPowerTracker.cpp
+        src/TxPowerTracker.h
+    )
+    target_include_directories(tci_cw_live_probe PRIVATE src)
+    target_link_libraries(tci_cw_live_probe PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets)
 
     add_executable(radio_attribution_test
         tests/radio_attribution_test.cpp

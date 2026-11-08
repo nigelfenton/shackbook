@@ -4,10 +4,13 @@
 #include "AetherSettingsReader.h"
 #include "TciClient.h"      // tciNicknameKey()
 #include "RigctldClient.h"   // rigctldNicknameKey()
+#include "RigctldConnectionTest.h"
 #include "HamlibRigList.h"
 
 #include <QSerialPortInfo>
 #include "TciDiscovery.h"
+#include "ShackStatus.h"   // default MQTT topic prefix
+#include "CwKeyerSettings.h"
 
 #include <QComboBox>
 #include <QEventLoop>
@@ -21,6 +24,8 @@
 #include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QScrollArea>
 #include <QVBoxLayout>
 #include <QDialogButtonBox>
 #include <QTabWidget>
@@ -75,11 +80,20 @@ void SettingsDialog::buildUI()
     m_defaultTxPwr->setRange(0.0, 99999.0);
     m_defaultTxPwr->setDecimals(1);
     m_defaultTxPwr->setSuffix(" W");
+    m_txPwrFromRadio = new QCheckBox("Use the power measured by the radio (TCI) when available");
+    m_txPwrFromRadio->setToolTip(
+        "Logs the peak forward power of your last transmission (within 2 minutes)\n"
+        "instead of the default. Falls back to the default when nothing was measured,\n"
+        "or with rigctld.\n\n"
+        "This is the radio's own output: with an amplifier in line it is the drive\n"
+        "power, not the power at the antenna. A tune carrier on AetherSDR counts as\n"
+        "a transmission, so key up after tuning before logging.");
     m_myOperator   = new QLineEdit;
     opL->addRow("My call",       m_myCall);
     opL->addRow("My grid",       m_myGrid);
     opL->addRow("My state",      m_myState);
     opL->addRow("Default power", m_defaultTxPwr);
+    opL->addRow("",              m_txPwrFromRadio);
     opL->addRow("Operator",      m_myOperator);
     tabs->addTab(op, "Operator");
 
@@ -189,6 +203,26 @@ void SettingsDialog::buildUI()
     tciL->addRow("Host", m_tciHost);
     tciL->addRow("Port", m_tciPort);
     tciL->addRow(QString(), m_tciScan);
+
+    // "Is it actually working?" (#15). Proves the chain by asking the radio
+    // where it is, and names the broken link when it can't, above all the
+    // wrong-baud case that otherwise connects and silently reads nothing.
+    // Tests the Host and Port as typed, so a setup can be tried before saving.
+    m_rigTest = new QPushButton("Test connection");
+    m_rigTest->setToolTip(
+        "Ask rigctld for the radio's frequency and mode, and show what came back.\n\n"
+        "Read-only: it never keys or tunes the radio.");
+    connect(m_rigTest, &QPushButton::clicked, this, &SettingsDialog::onTestRigConnection);
+    tciL->addRow(QString(), m_rigTest);
+    m_rigTestResult = new QLabel;
+    m_rigTestResult->setWordWrap(true);
+    m_rigTestResult->setTextInteractionFlags(Qt::TextSelectableByMouse
+                                             | Qt::TextSelectableByKeyboard);
+    m_rigTestResult->setVisible(false);
+    tciL->addRow(QString(), m_rigTestResult);
+    // A result describes the address it tested; once that changes it is stale.
+    connect(m_tciHost, &QLineEdit::textChanged, this, [this]() { clearRigTestResult(); });
+    connect(m_tciPort, &QSpinBox::valueChanged, this, [this]() { clearRigTestResult(); });
     tciL->addRow("Radio nickname", m_tciNickname);
     tciL->addRow(m_tciAutoConnect);
     tciL->addRow(m_spotTunes);
@@ -240,6 +274,26 @@ void SettingsDialog::buildUI()
     m_potaPollSec->setSuffix(" s");
     dxcL->addRow(m_potaEnable);
     dxcL->addRow("POTA poll interval", m_potaPollSec);
+
+    // ── N1MM+ / DXLog bandmap spots over UDP (#11) ──
+    auto* n1mmSep = new QLabel("─── N1MM+ / DXLog bandmap (UDP) ───");
+    n1mmSep->setStyleSheet("QLabel { color: #6b8099; font-size: 9px; "
+                           "font-weight: bold; letter-spacing: 0.08em; }");
+    dxcL->addRow(n1mmSep);
+    m_n1mmEnable = new QCheckBox("Listen for N1MM+ / DXLog spots");
+    m_n1mmEnable->setToolTip(
+        "Take spots from your contest logger's bandmap. They carry contest state "
+        "(dupe, mult, new) and are removed when the logger removes them.\n\n"
+        "Receive-only. In N1MM+, add this port to Config > Configure Ports > "
+        "Broadcast Data > Spots.");
+    m_n1mmPort = new QSpinBox;
+    m_n1mmPort->setRange(1, 65535);
+    m_n1mmPort->setToolTip(
+        "UDP port to listen on. N1MM+ uses 12060 by default, but SmartSDR CAT "
+        "often holds it already. If so, pick another (e.g. 12061) and add it to "
+        "N1MM+'s broadcast list.");
+    dxcL->addRow(m_n1mmEnable);
+    dxcL->addRow("N1MM UDP port", m_n1mmPort);
 
     auto refreshDxcEditable = [this]() {
         const bool manual = !m_dxcAutoDetect->isChecked();
@@ -308,6 +362,65 @@ void SettingsDialog::buildUI()
     ctstL->addRow("Next STX serial", m_stxNext);
     tabs->addTab(ctst, "Contest");
 
+    // ── CW keyer (#32) ──────────────────────────────────────────────────
+    // The first thing in ShackBook that can transmit, so it is off until the
+    // operator turns it on here, and says so in as many words.
+    auto* cw  = new QWidget;
+    auto* cwL = new QFormLayout(cw);
+    m_cwEnable = new QCheckBox("Allow ShackBook to send CW");
+    auto* cwNote = new QLabel(
+        "Sends CW through the TCI radio link (AetherSDR, ExpertSDR or a TCI bridge). "
+        "When on, the CW keyer panel appears and F1-F8 send these messages while "
+        "ShackBook has focus. Nothing is ever sent except by a button or F-key: "
+        "not on saving a QSO, a spot click or connecting. Esc stops sending anywhere "
+        "in ShackBook. Only sends while the radio is in CW.");
+    cwNote->setWordWrap(true);
+    cwL->addRow(m_cwEnable);
+    cwL->addRow(cwNote);
+    auto* tokens = new QLabel(
+        "Tokens: {CALL} {MYCALL} {RST} {NR} {EXCH} {NAME}. A message whose token is "
+        "empty is not sent. {NR} (sent as three digits) and {EXCH} come from the "
+        "contest row, so they are filled only in contest mode.");
+    tokens->setWordWrap(true);
+    cwL->addRow(tokens);
+    for (int i = 0; i < 8; ++i) {
+        auto* label = new QLineEdit;
+        label->setMaximumWidth(90);
+        label->setPlaceholderText("label");
+        auto* text = new QLineEdit;
+        auto* row = new QHBoxLayout;
+        row->addWidget(label);
+        row->addWidget(text, 1);
+        cwL->addRow(QStringLiteral("F%1").arg(i + 1), row);
+        m_cwLabels << label;
+        m_cwTexts  << text;
+    }
+    m_cwCutRst = new QCheckBox("Cut numbers in {RST} (599 → 5NN)");
+    m_cwCutNr  = new QCheckBox("Cut numbers in {NR} (001 → TT1)");
+    m_cwCutOne = new QCheckBox("Also cut 1 → A");
+    m_cwName   = new QLineEdit;
+    m_cwName->setPlaceholderText("first name, e.g. TONY");
+    cwL->addRow(m_cwCutRst);
+    cwL->addRow(m_cwCutNr);
+    cwL->addRow(m_cwCutOne);
+    cwL->addRow("{NAME}", m_cwName);
+    auto* cwDefaults = new QPushButton("Restore default messages");
+    connect(cwDefaults, &QPushButton::clicked, this, [this] {
+        const auto d = defaultCwMacros();
+        for (int i = 0; i < m_cwTexts.size() && i < d.size(); ++i) {
+            m_cwLabels[i]->setText(d[i].label);
+            m_cwTexts[i]->setText(d[i].text);
+        }
+    });
+    cwL->addRow(cwDefaults);
+    // Eight message rows make this the tallest tab; scroll rather than
+    // stretch the whole dialog past a laptop screen.
+    auto* cwScroll = new QScrollArea;
+    cwScroll->setWidgetResizable(true);
+    cwScroll->setFrameShape(QFrame::NoFrame);
+    cwScroll->setWidget(cw);
+    tabs->addTab(cwScroll, "CW keyer");
+
     // ── Cabrillo ────────────────────────────────────────────────────────
     auto* cab = new QWidget;
     auto* cabL = new QFormLayout(cab);
@@ -340,6 +453,41 @@ void SettingsDialog::buildUI()
     cabL->addRow("Transmitter",   m_cbCatTransmitter);
     tabs->addTab(cab, "Cabrillo");
 
+    // ── MQTT (#24) ──────────────────────────────────────────────────────
+    auto* mq  = new QWidget;
+    auto* mqL = new QFormLayout(mq);
+    m_mqttEnable = new QCheckBox("Publish shack status to an MQTT broker (e.g. for Home Assistant)");
+    m_mqttHost   = new QLineEdit;
+    m_mqttHost->setPlaceholderText("broker address, e.g. 10.0.0.51");
+    m_mqttPort   = new QSpinBox;
+    m_mqttPort->setRange(1, 65535);
+    m_mqttUser   = new QLineEdit;
+    m_mqttPass   = new QLineEdit;
+    m_mqttPass->setEchoMode(QLineEdit::Password);
+    m_mqttPrefix = new QLineEdit;
+    m_mqttPrefix->setPlaceholderText(ShackStatus::defaultTopicPrefix(m_model->myCall()));
+    m_mqttHaDiscovery = new QCheckBox("Home Assistant discovery (entities appear automatically)");
+    m_mqttPublishQso  = new QCheckBox("Publish QSO details (the other station's callsign)");
+    m_mqttPublishQso->setToolTip(
+        "Off by default: puts the last contact's callsign, band and mode on the broker, "
+        "where anything allowed to subscribe can read it. Radio status and the "
+        "day's QSO count are published either way.");
+    auto* mqNote = new QLabel(
+        "LAN broker only (no TLS). The password is stored in this logbook's settings "
+        "in plain text, so use a dedicated broker account that can only publish "
+        "under the topic prefix, not a personal password. Logging never waits on the broker.");
+    mqNote->setWordWrap(true);
+    mqL->addRow(m_mqttEnable);
+    mqL->addRow("Broker host",   m_mqttHost);
+    mqL->addRow("Port",          m_mqttPort);
+    mqL->addRow("Username",      m_mqttUser);
+    mqL->addRow("Password",      m_mqttPass);
+    mqL->addRow("Topic prefix",  m_mqttPrefix);
+    mqL->addRow(m_mqttHaDiscovery);
+    mqL->addRow(m_mqttPublishQso);
+    mqL->addRow(mqNote);
+    tabs->addTab(mq, "MQTT");
+
     auto* btns = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     connect(btns, &QDialogButtonBox::accepted, this, &SettingsDialog::onAccept);
     connect(btns, &QDialogButtonBox::rejected, this, &QDialog::reject);
@@ -355,6 +503,7 @@ void SettingsDialog::populate()
     m_myGrid->setText(m_model->myGridsquare());
     m_myState->setText(m_model->myState());
     m_defaultTxPwr->setValue(m_model->defaultTxPwr());
+    m_txPwrFromRadio->setChecked(m_model->settingValue("TX_PWR_FROM_RADIO", "1") == "1");
     m_myOperator->setText(m_model->settingValue("MY_OPERATOR"));
 
     {
@@ -450,6 +599,8 @@ void SettingsDialog::populate()
 
     m_potaEnable->setChecked(m_model->settingValue("POTA_ENABLE", "1") == "1");
     m_potaPollSec->setValue(m_model->settingValue("POTA_POLL_SEC", "30").toInt());
+    m_n1mmEnable->setChecked(m_model->settingValue("N1MM_SPOTS_ENABLE", "0") == "1");
+    m_n1mmPort->setValue(m_model->settingValue("N1MM_SPOTS_PORT", "12060").toInt());
 
     const bool manual = !m_dxcAutoDetect->isChecked();
     m_dxcHost->setEnabled(manual);
@@ -482,6 +633,15 @@ void SettingsDialog::populate()
     else          m_contestId->setEditText(cid);
     m_stxNext->setValue(m_model->settingValue("CONTEST_STX_NEXT", "1").toInt());
 
+    m_mqttEnable->setChecked(m_model->settingValue("MQTT_ENABLE", "0") == "1");
+    m_mqttHost->setText(m_model->settingValue("MQTT_HOST"));
+    m_mqttPort->setValue(m_model->settingValue("MQTT_PORT", "1883").toInt());
+    m_mqttUser->setText(m_model->settingValue("MQTT_USERNAME"));
+    m_mqttPass->setText(m_model->settingValue("MQTT_PASSWORD"));
+    m_mqttPrefix->setText(m_model->settingValue("MQTT_TOPIC_PREFIX"));
+    m_mqttHaDiscovery->setChecked(m_model->settingValue("MQTT_HA_DISCOVERY", "1") == "1");
+    m_mqttPublishQso->setChecked(m_model->settingValue("MQTT_PUBLISH_QSO", "0") == "1");
+
     m_cbName->setText(m_model->settingValue("CABRILLO_NAME"));
     m_cbAddress->setText(m_model->settingValue("CABRILLO_ADDRESS"));
     m_cbEmail->setText(m_model->settingValue("CABRILLO_EMAIL"));
@@ -498,6 +658,20 @@ void SettingsDialog::populate()
     setCombo(m_cbCatPower,       m_model->settingValue("CABRILLO_CAT_POWER",        "HIGH"));
     setCombo(m_cbCatStation,     m_model->settingValue("CABRILLO_CAT_STATION",      "FIXED"));
     setCombo(m_cbCatTransmitter, m_model->settingValue("CABRILLO_CAT_TRANSMITTER",  "ONE"));
+
+    {
+        const CwKeyerConfig cw = loadCwKeyerConfig(
+            [this](const QString& k, const QString& d) { return m_model->settingValue(k, d); });
+        m_cwEnable->setChecked(cw.enabled);
+        for (int i = 0; i < m_cwTexts.size() && i < cw.macros.size(); ++i) {
+            m_cwLabels[i]->setText(cw.macros[i].label);
+            m_cwTexts[i]->setText(cw.macros[i].text);
+        }
+        m_cwCutRst->setChecked(cw.cut.cutRst);
+        m_cwCutNr->setChecked(cw.cut.cutNr);
+        m_cwCutOne->setChecked(cw.cut.cutOne);
+        m_cwName->setText(cw.name);
+    }
 }
 
 void SettingsDialog::refreshHamlibGuidance()
@@ -599,6 +773,8 @@ void SettingsDialog::refreshRigCommand()
     m_rigPort->setVisible(rig);
     m_rigBaud->setVisible(rig);
     m_rigCommand->setVisible(rig);
+    if (m_rigTest) m_rigTest->setVisible(rig);
+    if (!rig) clearRigTestResult();
     if (!rig) return;
 
     // The model NUMBER, not the label. userData holds it for a chosen row;
@@ -637,6 +813,48 @@ void SettingsDialog::refreshRigCommand()
         "Run this, and leave it running:<br><code>%1</code><br>"
         "ShackBook talks to it on port 4532; it does not start it, so nothing "
         "else loses the serial port.").arg(cmd.toHtmlEscaped()));
+}
+
+void SettingsDialog::clearRigTestResult()
+{
+    if (!m_rigTestResult) return;
+    // A test still running belongs to the old address; let it finish unseen.
+    if (m_rigTester && m_rigTester->running()) return;
+    m_rigTestResult->clear();
+    m_rigTestResult->setVisible(false);
+}
+
+void SettingsDialog::onTestRigConnection()
+{
+    if (!m_rigTester) {
+        m_rigTester = new RigctldConnectionTest(this);
+        connect(m_rigTester, &RigctldConnectionTest::finished, this,
+                [this](const RigctldTestResult& r) {
+                    const bool ok = r.outcome == RigctldTestResult::Outcome::Ok;
+                    m_rigTestResult->setStyleSheet(ok
+                        ? QStringLiteral("QLabel { color: #2e7d32; }")
+                        : QStringLiteral("QLabel { color: #c62828; }"));
+                    m_rigTestResult->setText((ok ? QStringLiteral("✓ ")
+                                                 : QStringLiteral("✗ "))
+                                             + describeRigctldTest(r));
+                    m_rigTest->setEnabled(true);
+                    m_rigTest->setText(tr("Test connection"));
+                });
+    }
+    if (m_rigTester->running()) return;
+
+    QString host = m_tciHost->text().trimmed();
+    if (host.isEmpty()) host = m_tciHost->placeholderText();
+    const auto port = static_cast<quint16>(m_tciPort->value());
+
+    m_rigTest->setEnabled(false);
+    m_rigTest->setText(QStringLiteral("Testing…"));
+    m_rigTestResult->setStyleSheet(QStringLiteral("QLabel { color: #6b8099; }"));
+    m_rigTestResult->setText(tr("Asking rigctld at %1:%2 for the radio's frequency. "
+                                "If the radio doesn't answer, this can take several "
+                                "seconds.").arg(host).arg(port));
+    m_rigTestResult->setVisible(true);
+    m_rigTester->start(host, port);
 }
 
 void SettingsDialog::onScanForRadios()
@@ -712,6 +930,7 @@ void SettingsDialog::onAccept()
     m_model->setSetting("MY_GRIDSQUARE",    m_myGrid->text().trimmed());
     m_model->setSetting("MY_STATE",         m_myState->text().trimmed().toUpper());
     m_model->setSetting("DEFAULT_TX_PWR",   QString::number(m_defaultTxPwr->value(), 'f', 1));
+    m_model->setSetting("TX_PWR_FROM_RADIO", m_txPwrFromRadio->isChecked() ? "1" : "0");
     m_model->setSetting("MY_OPERATOR",      m_myOperator->text().trimmed().toUpper());
 
     const QString source = m_radioSource->currentData().toString();
@@ -775,6 +994,8 @@ void SettingsDialog::onAccept()
 
     m_model->setSetting("POTA_ENABLE",   m_potaEnable->isChecked() ? "1" : "0");
     m_model->setSetting("POTA_POLL_SEC", QString::number(m_potaPollSec->value()));
+    m_model->setSetting("N1MM_SPOTS_ENABLE", m_n1mmEnable->isChecked() ? "1" : "0");
+    m_model->setSetting("N1MM_SPOTS_PORT",   QString::number(m_n1mmPort->value()));
 
     m_model->setSetting("LOOKUP_WORKEDBEFORE", m_lkWorkedBefore->isChecked() ? "1" : "0");
     m_model->setSetting("LOOKUP_CTY",          m_lkCty->isChecked() ? "1" : "0");
@@ -786,6 +1007,15 @@ void SettingsDialog::onAccept()
     m_model->setSetting("CONTEST_MODE",     m_contestMode->isChecked() ? "1" : "0");
     m_model->setSetting("CONTEST_ID",       m_contestId->currentText().trimmed().toUpper());
     m_model->setSetting("CONTEST_STX_NEXT", QString::number(m_stxNext->value()));
+
+    m_model->setSetting("MQTT_ENABLE",        m_mqttEnable->isChecked() ? "1" : "0");
+    m_model->setSetting("MQTT_HOST",          m_mqttHost->text().trimmed());
+    m_model->setSetting("MQTT_PORT",          QString::number(m_mqttPort->value()));
+    m_model->setSetting("MQTT_USERNAME",      m_mqttUser->text().trimmed());
+    m_model->setSetting("MQTT_PASSWORD",      m_mqttPass->text());
+    m_model->setSetting("MQTT_TOPIC_PREFIX",  m_mqttPrefix->text().trimmed());
+    m_model->setSetting("MQTT_HA_DISCOVERY",  m_mqttHaDiscovery->isChecked() ? "1" : "0");
+    m_model->setSetting("MQTT_PUBLISH_QSO",   m_mqttPublishQso->isChecked() ? "1" : "0");
 
     m_model->setSetting("CABRILLO_NAME",      m_cbName->text().trimmed());
     m_model->setSetting("CABRILLO_ADDRESS",   m_cbAddress->text().trimmed());
@@ -799,6 +1029,22 @@ void SettingsDialog::onAccept()
     m_model->setSetting("CABRILLO_CAT_POWER",       m_cbCatPower->currentText());
     m_model->setSetting("CABRILLO_CAT_STATION",     m_cbCatStation->currentText());
     m_model->setSetting("CABRILLO_CAT_TRANSMITTER", m_cbCatTransmitter->currentText());
+
+    {
+        CwKeyerConfig cw;
+        cw.enabled = m_cwEnable->isChecked();
+        for (int i = 0; i < m_cwTexts.size() && i < cw.macros.size(); ++i) {
+            cw.macros[i].label = m_cwLabels[i]->text();
+            cw.macros[i].text  = m_cwTexts[i]->text();
+        }
+        cw.cut.cutRst = m_cwCutRst->isChecked();
+        cw.cut.cutNr  = m_cwCutNr->isChecked();
+        cw.cut.cutOne = m_cwCutOne->isChecked();
+        cw.name = m_cwName->text();
+        saveCwKeyerConfig(cw,
+            [this](const QString& k, const QString& d) { return m_model->settingValue(k, d); },
+            [this](const QString& k, const QString& v) { m_model->setSetting(k, v); });
+    }
 
     accept();
 }

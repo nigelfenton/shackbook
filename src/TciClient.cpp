@@ -29,6 +29,7 @@ TciClient::TciClient(QObject* parent)
       m_reconnectTimer(new QTimer(this))
 {
     m_reconnectTimer->setSingleShot(true);
+    m_clock.start();
 
     connect(m_socket, &QWebSocket::connected,        this, &TciClient::onConnected);
     connect(m_socket, &QWebSocket::disconnected,     this, &TciClient::onDisconnected);
@@ -48,6 +49,13 @@ TciClient::TciClient(QObject* parent)
 
     connect(m_reconnectTimer, &QTimer::timeout,
             this, &TciClient::onReconnectTimeout);
+
+    m_cwSpeedReadback = new QTimer(this);
+    m_cwSpeedReadback->setSingleShot(true);
+    m_cwSpeedReadback->setInterval(kTciCwSpeedReadbackMs);
+    connect(m_cwSpeedReadback, &QTimer::timeout, this, [this]() {
+        if (m_connected) send(QStringLiteral("cw_macros_speed;"));
+    });
 }
 
 TciClient::~TciClient()
@@ -73,6 +81,10 @@ void TciClient::connectToServer(const QString& host, quint16 port)
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
         m_socket->abort();
     }
+    // The abort above reports a drop, which schedules a reconnect. This IS
+    // the reconnect, so that timer must not survive to abort it a second
+    // later (and the next one, and the next: see onConnected).
+    cancelReconnect();
     m_socket->open(m_url);
 }
 
@@ -95,12 +107,23 @@ void TciClient::send(const QString& cmd)
 
 void TciClient::onConnected()
 {
+    // A reconnect still pending from before this connection would fire on a
+    // healthy link: onReconnectTimeout() aborts and reopens, the abort
+    // schedules another, and the link churns once a second for good. Seen
+    // in AetherSDR's log as a "TCP drop" every ~990 ms (#32 on-air tests).
+    cancelReconnect();
     m_reconnectAttempts = 0;
-    setConnected(true);
     // TCI dialect varies between servers — sending `start;` is enough for
     // AetherSDR, ExpertSDR2, and SunSDR-mb1.  Servers ignore unknown
     // commands.  We do NOT also send `iq_start;` etc — we don't want IQ.
     send("start;");
+    // Transmit sensor readings (forward power, SWR) for logging the power a
+    // QSO was actually made at (#23). Opt-in on AetherSDR; ignored by servers
+    // that do not have them.
+    send("tx_sensors_enable:true;");
+    // Announced only now, so that anything a listener sends on connect (the
+    // CW keyer's speed query) goes out after `start;`, not before it.
+    setConnected(true);
 }
 
 void TciClient::onDisconnected()
@@ -111,6 +134,28 @@ void TciClient::onDisconnected()
     if (!m_device.isEmpty()) {
         m_device.clear();
         emit deviceNameChanged(m_device);
+    }
+    // Readings from before the drop may belong to a different radio or a
+    // long-gone transmission; never log them against a new contact.
+    m_txPower.reset();
+    // A read-back owed to the old connection must not go out on the next.
+    m_cwSpeedReadback->stop();
+    // The next server may run at a different speed; show "unknown" until it
+    // says, rather than the old radio's number.
+    if (m_cwSpeedWpm != 0) {
+        m_cwSpeedWpm = 0;
+        emit cwSpeedChanged(0);
+    }
+    if (m_transmitting) {
+        m_transmitting = false;
+        emit transmittingChanged(false);
+    }
+    // The old radio's mode must not stand in for the next one's: a stale
+    // "CW" would hold the CW keyer's mode gate open until the new server
+    // reports, and that is the unsafe direction.
+    if (!m_mode.isEmpty()) {
+        m_mode.clear();
+        emit modeChanged(m_mode);
     }
     setConnected(false);
     if (!m_userInitiatedDisconnect) {
@@ -248,6 +293,63 @@ bool TciClient::setModeString(const QString& adifMode)
     return true;
 }
 
+QString tciCwMacroCommand(const QString& text)
+{
+    const QString t = text.trimmed();
+    if (t.isEmpty()) return {};
+    for (const QChar c : t) {
+        const char16_t u = c.unicode();
+        // Printable ASCII only: control characters and anything beyond 0x7E
+        // have no Morse meaning and no agreed handling on any TCI server.
+        if (u < 0x20 || u > 0x7E) return {};
+        // ';' terminates a TCI command; the remainder would be read as a
+        // fresh command of whatever it happened to spell.
+        if (u == u';') return {};
+    }
+    return QStringLiteral("cw_macros:0,%1;").arg(t);
+}
+
+bool TciClient::sendCw(const QString& text)
+{
+    if (!m_connected) return false;
+    const QString cmd = tciCwMacroCommand(text);
+    if (cmd.isEmpty()) return false;
+    send(cmd);
+    return true;
+}
+
+bool TciClient::stopCw()
+{
+    // Checks the socket, not m_connected: see the header. send() would
+    // silently drop it otherwise, and the caller deserves to know.
+    if (!m_socket || m_socket->state() != QAbstractSocket::ConnectedState)
+        return false;
+    send(QStringLiteral("cw_macros_stop;"));
+    // Out of our buffer and into the OS now, not on the next event-loop
+    // turn. That is all flush() does: it does not make the server act on
+    // the stop before it sees the link close, and AetherSDR v26.10.1 does
+    // not (aethersdr/AetherSDR#6187). The real fix for a stop followed by
+    // a disconnect is holding the link: MainWindow::stopCwBeforeLinkGoes().
+    m_socket->flush();
+    return true;
+}
+
+bool TciClient::setCwSpeed(int wpm)
+{
+    if (!m_connected) return false;
+    const int clamped = qBound(kTciCwMinWpm, wpm, kTciCwMaxWpm);
+    send(QStringLiteral("cw_macros_speed:%1;").arg(clamped));
+    m_cwSpeedReadback->start();   // restarts: a run of sets gets one GET
+    return true;
+}
+
+bool TciClient::requestCwSpeed()
+{
+    if (!m_connected) return false;
+    send(QStringLiteral("cw_macros_speed;"));
+    return true;
+}
+
 
 void TciClient::parseLine(const QString& line)
 {
@@ -304,9 +406,59 @@ void TciClient::parseLine(const QString& line)
                 emit frequencyChanged(m_freqMhz);
             }
         }
+    } else if (cmd == "trx" && args.size() >= 2) {
+        // trx:rx,true|false — transmit state of TRX 0.
+        if (args[0].trimmed() == "0") {
+            const bool on = args[1].trimmed().compare(QLatin1String("true"),
+                                                      Qt::CaseInsensitive) == 0;
+            m_txPower.setTransmitting(on, m_clock.elapsed());
+            if (on != m_transmitting) {
+                m_transmitting = on;
+                emit transmittingChanged(on);
+            }
+        }
+    } else if (cmd == "tune" && args.size() >= 2) {
+        // tune:rx,true|false — a tune carrier, whose power must not be logged
+        // as a QSO's. ExpertSDR sends this; AetherSDR (as of 2026-09) does
+        // not, so on AetherSDR a tune looks like any other transmission.
+        if (args[0].trimmed() == "0") {
+            m_txPower.setTuning(args[1].trimmed().compare(QLatin1String("true"),
+                                                          Qt::CaseInsensitive) == 0);
+        }
+    } else if ((cmd == "tx_sensors" || cmd == "tx_sensor") && args.size() >= 5) {
+        // tx_sensors:trx,mic_dbm,fwd_watts,peak_watts,swr[,alc_dbfs...]
+        // Read by position; AetherSDR appends extra fields after swr. Both
+        // spellings are accepted because TCI documents and servers differ.
+        if (args[0].trimmed() == "0") {
+            bool okFwd = false, okSwr = false;
+            const double fwd = args[2].trimmed().toDouble(&okFwd);
+            const double swr = args[4].trimmed().toDouble(&okSwr);
+            if (okFwd) {
+                m_txPower.addForwardPower(fwd, m_clock.elapsed());
+                emit txSensorsReceived(fwd, okSwr ? swr : 0.0);
+            }
+        }
+    } else if (cmd == "cw_macros_speed" && args.size() >= 1) {
+        // cw_macros_speed:wpm — the answer to requestCwSpeed() and the echo
+        // of setCwSpeed(). The speed is global (spec shape has no TRX), but
+        // read the LAST argument so a `cw_macros_speed:0,25;` form also
+        // means 25, the same rule AetherSDR applies to what it receives
+        // (TciProtocol::cmdCwMacrosSpeed).
+        bool ok = false;
+        const int wpm = args.last().trimmed().toInt(&ok);
+        if (ok && wpm > 0 && wpm != m_cwSpeedWpm) {
+            m_cwSpeedWpm = wpm;
+            emit cwSpeedChanged(m_cwSpeedWpm);
+        }
     }
-    // Other events (trx, drive, rit, xit, sql, ...) intentionally ignored
-    // — we only need freq + mode for the logbook.
+    // Other events (drive, rit, xit, sql, ...) intentionally ignored.
+}
+
+std::optional<double> TciClient::measuredTxPowerW() const
+{
+    const auto w = m_txPower.recentPeakWatts(m_clock.elapsed());
+    if (!w) return std::nullopt;
+    return TxPowerTracker::roundForLog(*w);
 }
 
 void TciClient::scheduleReconnect()
@@ -329,6 +481,10 @@ void TciClient::onReconnectTimeout()
     if (m_socket->state() != QAbstractSocket::UnconnectedState) {
         m_socket->abort();
     }
+    // The abort above reports a drop, which schedules a reconnect. This IS
+    // the reconnect, so that timer must not survive to abort it a second
+    // later (and the next one, and the next: see onConnected).
+    cancelReconnect();
     m_socket->open(m_url);
 }
 

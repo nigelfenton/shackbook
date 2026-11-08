@@ -15,6 +15,8 @@
 #include "DxClusterClient.h"
 #include "PotaClient.h"
 #include "WsprClient.h"
+#include "N1mmSpotClient.h"
+#include "ContestLayout.h"
 #include "CallsignLookup.h"
 #include "SectionMapDialog.h"
 #include "GridMapDialog.h"
@@ -22,9 +24,17 @@
 #include "LotwDialog.h"
 #include "AprsActivityDialog.h"
 #include "AetherSettingsReader.h"
+#include "MqttPublisher.h"
+#include "ShackStatus.h"
+#include "CwKeyer.h"
+#include "CwKeyerPanel.h"
+#include "CwKeyerSettings.h"
+#include "CwSender.h"
 
+#include <QApplication>
 #include <QDialog>
 #include <QPlainTextEdit>
+#include <QShortcut>
 #include <QTextCursor>
 #include <QTimer>
 
@@ -37,6 +47,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QInputDialog>
 #include <QProgressDialog>
@@ -49,6 +60,9 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QDate>
+#include <QHash>
+#include <QLocale>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
@@ -60,7 +74,10 @@
 #include <QStatusBar>
 #include <QStringList>
 #include <QStyle>
+#include <QSysInfo>
 #include <QTableWidget>
+#include <QFont>
+#include <QPalette>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
@@ -200,6 +217,7 @@ MainWindow::MainWindow(QWidget* parent)
       m_dxc(new DxClusterClient(this)),
       m_pota(new PotaClient(this)),
       m_wspr(new WsprClient(this)),
+      m_n1mm(new N1mmSpotClient(this)),
       m_spotPurgeTimer(new QTimer(this))
 {
     setWindowTitle(windowTitleFor({}));
@@ -223,6 +241,11 @@ MainWindow::MainWindow(QWidget* parent)
     // Callsign-lookup chain: cty.dat ships inside the binary as a resource;
     // online providers are configured from settings (Lookup tab).
     m_cty.load(QStringLiteral(":/data/cty.dat"));
+    // Contest definitions and calendar for the QSO party layout (#18). Loaded
+    // before any settings are applied, so a layout saved mid-contest is
+    // recognised on startup rather than dropped as unknown.
+    m_contests.load(QStringLiteral(":/data/contests.dat"));
+    m_calendar.load(QStringLiteral(":/data/calendar.dat"));
     if (!m_cty.isLoaded())
         qWarning() << "cty.dat resource failed to load — offline country "
                       "lookup disabled";
@@ -277,6 +300,20 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_tci, &TciClient::frequencyChanged,  this, &MainWindow::onTciFrequencyChanged);
     connect(m_tci, &TciClient::modeChanged,       this, &MainWindow::onTciModeChanged);
 
+    // Shack status to MQTT (#24). Transmit state only comes from TCI.
+    m_mqtt = new MqttPublisher(this);
+    m_mqtt->setThrottle(QString::fromLatin1(ShackStatus::kFrequency), 500);
+    connect(m_tci, &TciClient::transmittingChanged, this, [this](bool on) {
+        m_mqtt->publishState(QString::fromLatin1(ShackStatus::kTransmitting),
+                             ShackStatus::onOff(on));
+    });
+    connect(m_model, &LogbookModel::qsoAdded, this,
+            [this](qint64 id) { publishQsoStatus(id); });
+    connect(m_model, &LogbookModel::qsoDeleted, this, [this]() { publishQsoStatus(); });
+    m_mqttDayTimer = new QTimer(this);
+    m_mqttDayTimer->setInterval(60 * 1000);
+    connect(m_mqttDayTimer, &QTimer::timeout, this, [this]() { publishQsoStatus(); });
+
     // rigctld feeds the SAME handlers. Frequency and mode are frequency and
     // mode whatever carried them, so the rest of the app never learns which
     // kind of radio is attached.
@@ -313,6 +350,21 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::onWsprPollCompleted);
     connect(m_wspr, &WsprClient::agentStateChanged,
             this, &MainWindow::onWsprAgentStateChanged);
+    connect(m_n1mm, &N1mmSpotClient::spotReceived,
+            this, &MainWindow::onN1mmSpotReceived);
+    connect(m_n1mm, &N1mmSpotClient::spotDeleted,
+            this, &MainWindow::onN1mmSpotDeleted);
+    // A port another program holds must not look like a quiet contest (#11).
+    connect(m_n1mm, &N1mmSpotClient::listeningChanged, this,
+            [this](bool listening, const QString& error) {
+                if (!error.isEmpty()) statusBar()->showMessage(error, 20000);
+                if (m_dxcLog)
+                    m_dxcLog->appendPlainText(QString("[%1] N1MM spots: %2")
+                        .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+                        .arg(!error.isEmpty() ? error
+                             : listening ? QStringLiteral("listening on UDP port %1").arg(m_n1mm->port())
+                                         : QStringLiteral("stopped")));
+            });
 
     connect(m_dxc, &DxClusterClient::loginRejected, this,
             [this](const QString& reason) {
@@ -387,14 +439,138 @@ MainWindow::MainWindow(QWidget* parent)
     refreshStatusBar();
     refreshLinkLabel();
 
+    // The everyday entry form is complete: snapshot it, so a party layout can
+    // always be reverted exactly (#18). Then bring back a layout that was on
+    // when ShackBook last closed.
+    m_layoutCtl.captureEveryday();
+    m_layoutReady = true;
+    applyPartyLayoutFromSettings();
+    m_partyHintTimer = new QTimer(this);
+    m_partyHintTimer->setInterval(30 * 60 * 1000);   // a party may start while we're open
+    connect(m_partyHintTimer, &QTimer::timeout, this, &MainWindow::refreshPartyHint);
+    m_partyHintTimer->start();
+
     applyAutoConnectFromSettings();
     applyClusterConfigFromSettings();
     applyPotaConfigFromSettings();
     applyWsprConfigFromSettings();
+    applyN1mmConfigFromSettings();
     applyLookupConfigFromSettings();
+    applyMqttConfigFromSettings();
+
+    buildCwKeyer();
+    applyCwKeyerFromSettings();
 }
 
-MainWindow::~MainWindow() = default;
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    stopCwBeforeLinkGoes();
+    QMainWindow::closeEvent(event);
+}
+
+void MainWindow::stopCwBeforeLinkGoes()
+{
+    if (!m_cwKeyer || !m_cwKeyer->radioMayBeSending()) return;
+    const bool wasTransmitting = m_tci->transmitting();
+    m_cwPanel->stopNow();
+
+    // Measured on a FLEX-6500 via AetherSDR v26.10.1: a stop followed AT
+    // ONCE by a disconnect is lost and the message runs to the end (16 s);
+    // the same stop with 250 ms before the disconnect ends it in ~90 ms.
+    // So hold the link until the radio has unkeyed, which proves the stop
+    // was carried out, or 250 ms if it was not transmitting to begin with.
+    // Capped, and user input is held off meanwhile so nothing else can
+    // start in the middle of a disconnect.
+    QElapsedTimer t;
+    t.start();
+    while (t.elapsed() < 600) {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 20);
+        if (wasTransmitting ? !m_tci->transmitting() : t.elapsed() >= 250) break;
+    }
+}
+
+MainWindow::~MainWindow()
+{
+    // Closing ShackBook mid-message must not leave the radio keying: turning
+    // the keyer off sends a stop if, and only if, the radio may be sending.
+    // The TCI client is still alive here; children are deleted after this.
+    if (m_cwKeyer) m_cwKeyer->setEnabled(false);
+}
+
+// ── CW keyer (#32) ─────────────────────────────────────────────────────
+
+void MainWindow::buildCwKeyer()
+{
+    m_cwSender = std::make_unique<TciCwSender>(m_tci);
+    m_cwKeyer  = new CwKeyer(m_cwSender.get(), [this] { return cwContext(); }, this);
+    m_cwPanel  = new CwKeyerPanel(m_cwKeyer, this);
+    addDockWidget(Qt::BottomDockWidgetArea, m_cwPanel);
+    m_cwPanel->hide();
+    m_cwStopFilter = new CwStopKeyFilter(m_cwPanel, this);
+
+    connect(m_tci, &TciClient::transmittingChanged, m_cwKeyer, &CwKeyer::onTransmittingChanged);
+    connect(m_tci, &TciClient::connectionChanged,   m_cwKeyer, &CwKeyer::onConnectionChanged);
+    connect(m_tci, &TciClient::cwSpeedChanged,      m_cwPanel, &CwKeyerPanel::setSpeed);
+    connect(m_tci, &TciClient::connectionChanged, this, [this](bool) { refreshCwPanelRadioState(); });
+    connect(m_tci, &TciClient::modeChanged,       this, [this](const QString&) { refreshCwPanelRadioState(); });
+}
+
+void MainWindow::applyCwKeyerFromSettings()
+{
+    if (!m_cwKeyer || !m_model) return;
+    const CwKeyerConfig cfg = loadCwKeyerConfig(
+        [this](const QString& k, const QString& d) { return m_model->settingValue(k, d); });
+
+    m_cwKeyer->setMacros(cfg.macros);
+    m_cwKeyer->setCutOptions(cfg.cut);
+    m_cwPanel->refreshLabels();
+
+    // Disabling sends a stop if a message is in progress; enabling asks the
+    // radio for its speed. Neither happens when nothing changed.
+    m_cwKeyer->setEnabled(cfg.enabled);
+    m_cwPanel->setVisible(cfg.enabled);
+
+    if (cfg.enabled && m_cwShortcuts.isEmpty()) {
+        // Window-scoped: F1-F8 send only while a ShackBook main-window widget
+        // has focus. No auto-repeat: holding F1 must not send CQ over and
+        // over, each one replacing the last.
+        for (int i = 0; i < 8; ++i) {
+            auto* sc = new QShortcut(QKeySequence(Qt::Key_F1 + i), this);
+            sc->setContext(Qt::WindowShortcut);
+            sc->setAutoRepeat(false);
+            connect(sc, &QShortcut::activated, this, [this, i] { m_cwPanel->trigger(i); });
+            m_cwShortcuts << sc;
+        }
+        qApp->installEventFilter(m_cwStopFilter);
+    } else if (!cfg.enabled && !m_cwShortcuts.isEmpty()) {
+        qDeleteAll(m_cwShortcuts);
+        m_cwShortcuts.clear();
+        qApp->removeEventFilter(m_cwStopFilter);
+    }
+    refreshCwPanelRadioState();
+}
+
+void MainWindow::refreshCwPanelRadioState()
+{
+    if (!m_cwPanel) return;
+    m_cwPanel->setRadioState(m_tci->connected(), m_tci->currentMode(), !usingRigctld());
+    m_cwPanel->setSpeed(m_tci->cwSpeedWpm());
+}
+
+CwContext MainWindow::cwContext() const
+{
+    CwContext c;
+    if (m_callEdit)      c.call   = m_callEdit->text();
+    if (m_model)         c.myCall = m_model->myCall();
+    if (m_rstSentEdit)   c.rst    = m_rstSentEdit->text();
+    // The serial and exchange live in the contest row, hidden outside
+    // contest mode: what is left in it then must not go out on F2.
+    c.contest = m_model && m_model->contestMode();
+    if (c.contest && m_stxEdit)       c.nr   = m_stxEdit->text();
+    if (c.contest && m_stxStringEdit) c.exch = m_stxStringEdit->text();
+    if (m_model)         c.name   = m_model->settingValue(QStringLiteral("CW_NAME"));
+    return c;
+}
 
 // ── Menus ──────────────────────────────────────────────────────────────
 
@@ -421,6 +597,8 @@ void MainWindow::buildMenus()
     m_actSettings      = toolsMenu->addAction("&Settings…", this, &MainWindow::onSettings);
     m_actAwards        = toolsMenu->addAction("&Awards…", this, &MainWindow::onShowAwards);
     toolsMenu->addAction("&QSO Party…", this, &MainWindow::onShowQsoParty);
+    m_partyMenu = toolsMenu->addMenu("QSO Party &Layout");
+    connect(m_partyMenu, &QMenu::aboutToShow, this, &MainWindow::populatePartyMenu);
     m_actLotw          = toolsMenu->addAction("&LoTW Upload…", this, &MainWindow::onShowLotw);
     toolsMenu->addSeparator();
     m_actFindRadios    = toolsMenu->addAction("&Find radios…",   this, &MainWindow::onFindRadios);
@@ -593,6 +771,53 @@ void MainWindow::buildUI()
         main->addWidget(sep);
     }
 
+    // ── QSO party layout banner and calendar hint (#18) ────────────────
+    {
+        auto makeBar = [](const char* border) {
+            auto* f = new QFrame;
+            f->setStyleSheet(QStringLiteral(
+                "QFrame { background: #10233a; border: 1px solid %1; border-radius: 3px; }")
+                .arg(QLatin1String(border)));
+            return f;
+        };
+        m_partyBanner = makeBar("#ffaa00");
+        auto* b = new QHBoxLayout(m_partyBanner);
+        b->setContentsMargins(8, 3, 8, 3);
+        m_partyBannerText = new QLabel;
+        m_partyBannerText->setStyleSheet("QLabel { color: #ffcc66; font-size: 11px; border: none; }");
+        m_partyBannerText->setWordWrap(true);
+        auto* exitBtn = new QPushButton("Exit layout");
+        exitBtn->setToolTip("Return to the everyday entry form, exactly as it was.");
+        connect(exitBtn, &QPushButton::clicked, this, &MainWindow::exitPartyLayout);
+        b->addWidget(m_partyBannerText, 1);
+        b->addWidget(exitBtn);
+        m_partyBanner->hide();
+        main->addWidget(m_partyBanner);
+
+        m_partyHint = makeBar("#2e5a88");
+        auto* h = new QHBoxLayout(m_partyHint);
+        h->setContentsMargins(8, 3, 8, 3);
+        m_partyHintText = new QLabel;
+        m_partyHintText->setStyleSheet("QLabel { color: #9fc3e8; font-size: 11px; border: none; }");
+        m_partyHintText->setWordWrap(true);
+        auto* useBtn = new QPushButton("Use its layout");
+        connect(useBtn, &QPushButton::clicked, this, [this]() {
+            if (!m_partyHintId.isEmpty()) startPartyLayout(m_partyHintId);
+        });
+        auto* notNow = new QPushButton("Not now");
+        connect(notNow, &QPushButton::clicked, this, [this]() {
+            // Remember the refusal for this occurrence only: next year's party
+            // may be wanted.
+            if (m_model) m_model->setSetting("PARTY_HINT_DISMISSED", m_partyHintKey);
+            m_partyHint->hide();
+        });
+        h->addWidget(m_partyHintText, 1);
+        h->addWidget(useBtn);
+        h->addWidget(notNow);
+        m_partyHint->hide();
+        main->addWidget(m_partyHint);
+    }
+
     // ── Quick entry row ────────────────────────────────────────────────
     {
         auto* row = new QHBoxLayout;
@@ -651,6 +876,11 @@ void MainWindow::buildUI()
         row->addWidget(m_dupBadge);
         row->addWidget(m_saveBtn);
         main->addLayout(row);
+
+        m_layoutCtl.registerSlot(EntrySlot::Call,    m_callEdit,    lc);
+        m_layoutCtl.registerSlot(EntrySlot::RstSent, m_rstSentEdit, lrs);
+        m_layoutCtl.registerSlot(EntrySlot::RstRcvd, m_rstRcvdEdit, lrr);
+        m_layoutCtl.registerSlot(EntrySlot::Comment, m_commentEdit, lc2);
     }
 
     // ── Contest sub-row (visibility tied to contestMode) ───────────────
@@ -701,6 +931,11 @@ void MainWindow::buildUI()
 
         m_contestFrame->hide();
         main->addWidget(m_contestFrame);
+
+        m_layoutCtl.registerSlot(EntrySlot::Stx,     m_stxEdit,       lstx);
+        m_layoutCtl.registerSlot(EntrySlot::StxText, m_stxStringEdit, lstxs);
+        m_layoutCtl.registerSlot(EntrySlot::Srx,     m_srxEdit,       lsrx);
+        m_layoutCtl.registerSlot(EntrySlot::SrxText, m_srxStringEdit, lsrxs);
     }
 
     // separator
@@ -833,7 +1068,143 @@ void MainWindow::refreshContestUI()
         const int next = m_model->settingValue("CONTEST_STX_NEXT", "1").toInt();
         m_stxEdit->setText(QString::number(next > 0 ? next : 1));
     }
+    applyPartyLayoutFromSettings();
     refreshHeader();
+}
+
+// ── QSO party layout (#18) ─────────────────────────────────────────────────
+
+void MainWindow::startPartyLayout(const QString& contestId)
+{
+    if (!m_model) return;
+    const ContestDef def = m_contests.find(contestId);
+    if (!def.isValid()) return;
+    // Remember the contest settings from before, once, so Exit puts them back
+    // exactly rather than leaving contest mode switched on.
+    if (m_model->settingValue("PARTY_LAYOUT_ID").isEmpty()) {
+        m_model->setSetting("PARTY_LAYOUT_PREV_MODE", m_model->settingValue("CONTEST_MODE", "0"));
+        m_model->setSetting("PARTY_LAYOUT_PREV_ID",   m_model->settingValue("CONTEST_ID"));
+    }
+    m_model->setSetting("CONTEST_MODE", "1");
+    m_model->setSetting("CONTEST_ID", def.id);
+    m_model->setSetting("PARTY_LAYOUT_ID", def.id);
+    refreshContestUI();
+    populateContestFilter();
+}
+
+void MainWindow::exitPartyLayout()
+{
+    if (!m_model) return;
+    if (!m_model->settingValue("PARTY_LAYOUT_ID").isEmpty()) {
+        m_model->setSetting("CONTEST_MODE", m_model->settingValue("PARTY_LAYOUT_PREV_MODE", "0"));
+        m_model->setSetting("CONTEST_ID",   m_model->settingValue("PARTY_LAYOUT_PREV_ID"));
+    }
+    m_model->setSetting("PARTY_LAYOUT_ID", QString());
+    m_model->setSetting("PARTY_LAYOUT_PREV_MODE", QString());
+    m_model->setSetting("PARTY_LAYOUT_PREV_ID", QString());
+    m_saveWarnedFor.clear();
+    refreshContestUI();
+}
+
+void MainWindow::applyPartyLayoutFromSettings()
+{
+    if (!m_model || !m_layoutReady) return;
+    const QString id = m_model->settingValue("PARTY_LAYOUT_ID");
+    const ContestDef def = id.isEmpty() ? ContestDef{} : m_contests.find(id);
+
+    // The layout belongs to contest mode with this contest. If the operator
+    // turned contest mode off or picked another contest in Settings, that was
+    // their choice: end the layout without restoring the old settings.
+    const bool stillHeld = def.isValid() && m_model->contestMode()
+        && m_model->contestId().compare(def.id, Qt::CaseInsensitive) == 0;
+    if (!stillHeld) {
+        if (!id.isEmpty()) {
+            m_model->setSetting("PARTY_LAYOUT_ID", QString());
+            m_model->setSetting("PARTY_LAYOUT_PREV_MODE", QString());
+            m_model->setSetting("PARTY_LAYOUT_PREV_ID", QString());
+        }
+        if (m_layoutCtl.isApplied()) m_layoutCtl.revert();
+        m_partyBanner->hide();
+        refreshPartyHint();
+        return;
+    }
+
+    if (!m_layoutCtl.isApplied() || m_layoutCtl.current().contestId != def.id)
+        m_layoutCtl.apply(contestLayoutFor(def));
+    refreshPartyBanner(def);
+    m_partyHint->hide();
+}
+
+void MainWindow::refreshPartyBanner(const ContestDef& def)
+{
+    QString text = tr("<b>%1 layout</b>: fields it doesn't use are dimmed and skipped by Tab.")
+                       .arg(def.name.toHtmlEscaped());
+    if (!def.exchangeConfirmed)
+        text += tr(" The exchange hasn't been checked against the sponsor's rules yet.");
+
+    // Has the party ended? Offer the way out; never take it automatically.
+    const QDate today = QDate::currentDate();
+    for (const ContestEvent& e : m_calendar.events()) {
+        if (e.contestId.compare(def.id, Qt::CaseInsensitive) != 0) continue;
+        const QDate start = e.startIn(today.year());
+        const QDate end   = e.endIn(today.year());
+        if (start.isValid() && today >= start && today <= end) break;   // running now
+        const QDate lastEnd = (end.isValid() && end < today) ? end : e.endIn(today.year() - 1);
+        if (lastEnd.isValid() && lastEnd < today)
+            text += tr(" <b>It ended on %1</b>: exit the layout when you're done.")
+                        .arg(QLocale().toString(lastEnd, QLocale::ShortFormat));
+        break;
+    }
+    m_partyBannerText->setText(text);
+    m_partyBanner->show();
+}
+
+void MainWindow::refreshPartyHint()
+{
+    if (!m_model || !m_partyHint) return;
+    if (!m_model->settingValue("PARTY_LAYOUT_ID").isEmpty()) {
+        m_partyHint->hide();
+        return;
+    }
+    // Offer, never switch: an operator casually working a party station should
+    // not have the form rearranged under them.
+    const QDate today = QDate::currentDate();
+    for (const ContestOccurrence& occ : m_calendar.runningOn(today)) {
+        const ContestDef def = m_contests.find(occ.event.contestId);
+        if (!def.isValid()) continue;
+        const QString key = def.id + QLatin1Char('|') + occ.start.toString(Qt::ISODate);
+        if (m_model->settingValue("PARTY_HINT_DISMISSED") == key) continue;
+        m_partyHintId = def.id;
+        m_partyHintKey = key;
+        m_partyHintText->setText(tr("%1 is running now. Use its entry layout?")
+                                     .arg(def.name.toHtmlEscaped()));
+        m_partyHint->show();
+        return;
+    }
+    m_partyHint->hide();
+}
+
+void MainWindow::populatePartyMenu()
+{
+    if (!m_partyMenu || !m_model) return;
+    m_partyMenu->clear();
+    const QString active = m_model->settingValue("PARTY_LAYOUT_ID");
+
+    QAction* everyday = m_partyMenu->addAction(tr("Everyday layout"));
+    everyday->setCheckable(true);
+    everyday->setChecked(active.isEmpty());
+    connect(everyday, &QAction::triggered, this, &MainWindow::exitPartyLayout);
+    m_partyMenu->addSeparator();
+
+    for (const ContestDef& def : m_contests.all()) {
+        QAction* a = m_partyMenu->addAction(def.name.isEmpty() ? def.id : def.name);
+        a->setCheckable(true);
+        a->setChecked(active.compare(def.id, Qt::CaseInsensitive) == 0);
+        const QString id = def.id;
+        connect(a, &QAction::triggered, this, [this, id]() { startPartyLayout(id); });
+    }
+    if (m_contests.all().isEmpty())
+        m_partyMenu->addAction(tr("(no contest definitions loaded)"))->setEnabled(false);
 }
 
 // ── Quick-entry handlers ──────────────────────────────────────────────────
@@ -879,6 +1250,34 @@ void MainWindow::onSaveQso()
     const QString call = m_callEdit->text().trimmed().toUpper();
     if (call.isEmpty()) return;
 
+    // QSO party layout (#18): warn once if a field the contest's exchange needs
+    // is empty, so the form and the stored record agree. A second Enter (or
+    // SAVE) for the same call logs it anyway; a contest can't wait on a dialog.
+    m_layoutCtl.clearMissing();
+    if (m_layoutCtl.isApplied()) {
+        const QHash<EntrySlot, QString> values{
+            {EntrySlot::RstRcvd, m_rstRcvdEdit->text()},
+            {EntrySlot::RstSent, m_rstSentEdit->text()},
+            {EntrySlot::Srx,     m_srxEdit->text()},
+            {EntrySlot::SrxText, m_srxStringEdit->text()},
+            {EntrySlot::Stx,     m_stxEdit->text()},
+            {EntrySlot::StxText, m_stxStringEdit->text()},
+        };
+        const QVector<EntrySlot> missing = missingOnSave(m_layoutCtl.current(), values);
+        if (!missing.isEmpty() && m_saveWarnedFor != call) {
+            QStringList names;
+            for (EntrySlot s : missing) {
+                m_layoutCtl.setMissing(s, true);
+                names << entrySlotName(m_layoutCtl.current(), s);
+            }
+            statusBar()->showMessage(
+                tr("%1 is empty. Press Enter or SAVE again to log it anyway.")
+                    .arg(names.join(QStringLiteral(", "))), 8000);
+            m_saveWarnedFor = call;
+            return;
+        }
+    }
+
     Qso q;
     q.call = call;
 
@@ -895,7 +1294,7 @@ void MainWindow::onSaveQso()
     q.myCall       = m_model->myCall();
     q.myGridsquare = m_model->myGridsquare();
     q.myState      = m_model->myState();
-    q.txPwr        = m_model->defaultTxPwr();
+    q.txPwr        = txPowerForNewQso();
     q.station      = currentRadioName();   // blank unless TCI is connected
 
     if (m_model->contestMode()) {
@@ -935,6 +1334,7 @@ void MainWindow::onSaveQso()
     // so the next freq change will autofill afresh.
     m_lastAutofilledCall.clear();
     m_lastAutofilledComment.clear();
+    m_lastAutofillBucketHz = 0;
     m_lookupFill = Qso{};
     m_lookupFillCall.clear();
     if (m_model->contestMode()) {
@@ -943,6 +1343,8 @@ void MainWindow::onSaveQso()
         m_model->setSetting("CONTEST_STX_NEXT", QString::number(next));
     }
     m_saveBtn->setEnabled(false);
+    m_saveWarnedFor.clear();
+    m_layoutCtl.clearMissing();
     refreshDupBadge();
     m_callEdit->setFocus();
 }
@@ -1091,7 +1493,7 @@ void MainWindow::onNewQso()
     q.myCall       = m_model->myCall();
     q.myGridsquare = m_model->myGridsquare();
     q.myState      = m_model->myState();
-    q.txPwr        = m_model->defaultTxPwr();
+    q.txPwr        = txPowerForNewQso();   // prefilled; the dialog can change it
     q.station      = currentRadioName();   // blank unless TCI is connected
     EditDialog dlg(m_model, q, this);
     dlg.exec();
@@ -1172,7 +1574,10 @@ void MainWindow::onSettings()
         applyClusterConfigFromSettings();
         applyPotaConfigFromSettings();
         applyWsprConfigFromSettings();
+        applyN1mmConfigFromSettings();
         applyLookupConfigFromSettings();
+        applyMqttConfigFromSettings();
+        applyCwKeyerFromSettings();
         refreshStatusBar();
         // The source may have changed from TCI to rigctld or back.
         refreshLinkLabel();
@@ -1302,6 +1707,8 @@ void MainWindow::onSwitchLog()
     if (!chooseAndOpenLog(/*startup*/ false)) return;
     refreshTable();
     refreshStatusBar();
+    applyMqttConfigFromSettings();   // a different log may have a different callsign
+    applyCwKeyerFromSettings();      // and its own keyer enable and messages
 }
 
 void MainWindow::onShowAwards()
@@ -1510,6 +1917,9 @@ bool MainWindow::usingRigctld() const
 void MainWindow::connectActiveSource()
 {
     if (!m_model) return;
+    // Both branches can drop a live TCI link: switching to rigctld closes it,
+    // and connectToServer() replaces it. Stop any CW first (#32).
+    stopCwBeforeLinkGoes();
 
     // Only one link at a time. Two clients following one radio would poll the
     // same CAT port against each other — the "several programs fighting over
@@ -1600,6 +2010,8 @@ void MainWindow::onDisconnectTci()
 {
     // Stop both regardless of which is selected: if the setting changed while
     // one was live, the other would otherwise be left connected invisibly.
+    // CW first: after the disconnect a stop has nowhere to go (#32).
+    stopCwBeforeLinkGoes();
     m_tci->disconnectFromServer();
     m_rigctld->disconnectFromServer();
     // Stop a rigctld WE started -- otherwise disconnecting would leave it
@@ -1617,6 +2029,7 @@ void MainWindow::onTciConnectionChanged(bool connected)
     // settings when something is not working.
     refreshLinkLabel();
     refreshStatusBar();
+    publishRadioStatus();
     if (!connected) {
         // Don't clear cached freq/mode — keep them so a brief disconnect
         // doesn't wipe the auto-fill mid-QSO.
@@ -1630,10 +2043,16 @@ void MainWindow::onTciFrequencyChanged(double mhz)
     refreshHeader();
     refreshDupBadge();
     tryAutofillFromSpot();
+    publishRadioStatus();
 }
 
 void MainWindow::onTciModeChanged(const QString& mode)
 {
+    // TciClient reports "" when the link drops, so the CW keyer's mode gate
+    // closes. For logging, the last mode the radio reported stays the best
+    // guess: an empty one would log QSOs with no mode and flip a 599 RST to
+    // 59 on every reconnect.
+    if (mode.isEmpty()) return;
     m_rawTciMode = mode;
     QString adifMode, adifSub;
     LogbookModel::adifModeFromTciMode(mode, &adifMode, &adifSub);
@@ -1652,9 +2071,36 @@ void MainWindow::onTciModeChanged(const QString& mode)
     refreshHeader();
     refreshDupBadge();
     tryAutofillFromSpot();
+    publishRadioStatus();
 }
 
 // ── Spot autofill (Phase 2) ──────────────────────────────────────────────
+
+// Rounded frequency (Hz) of the radio's current freq, using the same
+// mode-dependent step SpotIndex buckets by, so "same bucket" here means
+// exactly what it means in the index.
+qint64 MainWindow::autofillBucketHz() const
+{
+    return SpotIndex::bucketHz(m_curFreqMhz, m_curMode);
+}
+
+// Drop an auto-fill that no longer belongs to where the radio is. Only
+// touches fields we own: a call or comment the operator typed is left alone
+// by the ownership checks in tryAutofillFromSpot() before this is reached.
+void MainWindow::clearSpotAutofill()
+{
+    if (m_callEdit) m_callEdit->clear();
+    if (m_commentEdit) {
+        const QString current = m_commentEdit->text().trimmed();
+        if (current.isEmpty() || current == m_lastAutofilledComment.trimmed())
+            m_commentEdit->clear();
+    }
+    m_lastAutofilledCall.clear();
+    m_lastAutofilledComment.clear();
+    m_lastAutofillBucketHz = 0;
+    if (m_saveBtn) m_saveBtn->setEnabled(false);
+    refreshDupBadge();
+}
 
 void MainWindow::tryAutofillFromSpot()
 {
@@ -1688,8 +2134,18 @@ void MainWindow::tryAutofillFromSpot()
 
     auto hit = m_spotIndex->findAt(m_curFreqMhz, m_curMode);
     if (!hit) {
-        // No matching spot.  Leave any previous auto-fill in place — the
-        // operator may have done a small QSY around the same station.
+        // No matching spot. Keep a previous auto-fill only while the radio is
+        // still in the bucket that auto-fill came from — that is the "wiggle
+        // around the same station" case the index's own step is sized for.
+        // Leaving the bucket is a move to a different, unspotted station, and
+        // keeping the old call and comment there would attach them to the
+        // wrong QSO on save.
+        if (m_lastAutofillBucketHz != 0 &&
+            autofillBucketHz() != m_lastAutofillBucketHz) {
+            clearSpotAutofill();
+            logLookup(QString("no spot — cleared stale auto-fill %1").arg(currentCall));
+            return;
+        }
         logLookup(currentCall.isEmpty()
                       ? QString("no spot in index")
                       : QString("no spot — keeping previous auto-fill %1").arg(currentCall));
@@ -1700,6 +2156,7 @@ void MainWindow::tryAutofillFromSpot()
     // there (ours or empty) with the new spot.
     m_callEdit->setText(hit->call);
     m_lastAutofilledCall = hit->call;
+    m_lastAutofillBucketHz = autofillBucketHz();
     m_saveBtn->setEnabled(true);
     refreshDupBadge();
     startCallsignLookup(hit->call);
@@ -1775,19 +2232,33 @@ void MainWindow::onShowSpotIndex()
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setAlternatingRowColors(true);
     table->verticalHeader()->setVisible(false);
-    table->setColumnCount(5);
-    table->setHorizontalHeaderLabels({"Freq (MHz)", "Mode", "Call", "Source", "Comment"});
+    table->setColumnCount(6);
+    table->setHorizontalHeaderLabels({"Freq (MHz)", "Mode", "Call", "Status", "Source", "Comment"});
     table->horizontalHeader()->setStretchLastSection(true);
 
     const auto rows = m_spotIndex->snapshot();
     table->setRowCount(rows.size());
     for (int i = 0; i < rows.size(); ++i) {
         const auto& s = rows[i];
-        table->setItem(i, 0, new QTableWidgetItem(QString::number(s.freqMhz, 'f', 4)));
-        table->setItem(i, 1, new QTableWidgetItem(s.mode));
-        table->setItem(i, 2, new QTableWidgetItem(s.call));
-        table->setItem(i, 3, new QTableWidgetItem(s.source));
-        table->setItem(i, 4, new QTableWidgetItem(s.comment));
+        const QString comment = s.spotter.isEmpty()
+            ? s.comment
+            : QStringLiteral("%1 (de %2)").arg(s.comment, s.spotter).trimmed();
+        const QStringList cells = {QString::number(s.freqMhz, 'f', 4), s.mode, s.call,
+                                   s.status, s.source, comment};
+        for (int c = 0; c < cells.size(); ++c) {
+            auto* item = new QTableWidgetItem(cells[c]);
+            // A logger's contest state is the point of an N1MM spot (#11): a
+            // dupe is shown but greyed (already worked, not "not spotted"),
+            // a needed multiplier stands out.
+            if (s.status == QLatin1String("dupe"))
+                item->setForeground(table->palette().brush(QPalette::Disabled, QPalette::Text));
+            if (s.status == QLatin1String("mult")) {
+                QFont f = item->font();
+                f.setBold(true);
+                item->setFont(f);
+            }
+            table->setItem(i, c, item);
+        }
     }
     table->resizeColumnsToContents();
     table->horizontalHeader()->setStretchLastSection(true);
@@ -1970,6 +2441,52 @@ void MainWindow::onPotaPollCompleted(int spots, const QString& errorOrEmpty)
         }
     }
     refreshStatusBar();
+}
+
+void MainWindow::onN1mmSpotReceived(const SpotData& spot)
+{
+    if (!m_spotIndex) return;
+    m_spotIndex->addOrUpdate(spot);
+    if (m_dxcLog)
+        m_dxcLog->appendPlainText(QString("[%1] N1MM %2 @ %3 MHz  %4%5")
+            .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+            .arg(spot.call)
+            .arg(spot.freqMhz, 0, 'f', 4)
+            .arg(spot.status.isEmpty() ? QString() : QStringLiteral("[%1] ").arg(spot.status))
+            .arg(spot.comment));
+    refreshStatusBar();
+}
+
+void MainWindow::onN1mmSpotDeleted(const QString& call, double freqMhz)
+{
+    if (!m_spotIndex) return;
+    // Per (call, band): a delete on 20m leaves the same call's 40m spot alone.
+    const bool removed = m_spotIndex->remove(call, freqMhz);
+    if (m_dxcLog)
+        m_dxcLog->appendPlainText(QString("[%1] N1MM delete %2 @ %3 MHz%4")
+            .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+            .arg(call)
+            .arg(freqMhz, 0, 'f', 4)
+            .arg(removed ? QString() : QStringLiteral(" (not held on that band)")));
+    refreshStatusBar();
+}
+
+void MainWindow::applyN1mmConfigFromSettings()
+{
+    if (!m_model || !m_n1mm) return;
+    // Off by default: it opens a listening UDP port, which an operator
+    // should choose to do.
+    const bool enable = m_model->settingValue("N1MM_SPOTS_ENABLE", "0") == "1";
+    const quint16 port = static_cast<quint16>(m_model->settingValue(
+        "N1MM_SPOTS_PORT", QString::number(N1mmSpotClient::defaultPort())).toUInt());
+    if (!enable) {
+        if (m_n1mm->listening()) m_n1mm->stop();
+        return;
+    }
+    // Re-bind only when something changed, so saving Settings mid-contest
+    // doesn't drop spots in flight.
+    if (m_n1mm->listening() && m_n1mm->port() == port) return;
+    m_n1mm->start(port ? port : N1mmSpotClient::defaultPort());
 }
 
 void MainWindow::applyPotaConfigFromSettings()
@@ -2179,6 +2696,97 @@ QString MainWindow::currentRadioName() const
     if (!nick.isEmpty()) return nick;
 
     return m_tci->deviceName().trimmed();
+}
+
+void MainWindow::applyMqttConfigFromSettings()
+{
+    if (!m_model || !m_mqtt) return;
+    const QString call = m_model->myCall();
+
+    MqttConfig cfg;
+    cfg.enabled  = m_model->settingValue("MQTT_ENABLE", "0") == "1";
+    cfg.host     = m_model->settingValue("MQTT_HOST").trimmed();
+    const int port = m_model->settingValue("MQTT_PORT", "1883").toInt();
+    cfg.port     = static_cast<quint16>((port > 0 && port < 65536) ? port : 1883);
+    cfg.username = m_model->settingValue("MQTT_USERNAME").trimmed();
+    cfg.password = m_model->settingValue("MQTT_PASSWORD");
+    QString prefix = m_model->settingValue("MQTT_TOPIC_PREFIX").trimmed();
+    while (prefix.endsWith(QLatin1Char('/'))) prefix.chop(1);
+    cfg.topicPrefix = prefix.isEmpty() ? ShackStatus::defaultTopicPrefix(call) : prefix;
+    // Unique per machine AND log: a broker disconnects the older of two
+    // clients sharing an id, so two ShackBooks would knock each other off.
+    cfg.clientId = QStringLiteral("shackbook-%1-%2")
+                       .arg(ShackStatus::nodeId(call),
+                            ShackStatus::nodeId(QSysInfo::machineHostName()));
+    m_mqtt->configure(cfg);
+
+    if (!cfg.enabled) {
+        m_mqttDayTimer->stop();
+        return;
+    }
+    m_mqttDayTimer->start();
+
+    const bool haDiscovery = m_model->settingValue("MQTT_HA_DISCOVERY", "1") == "1";
+    const bool qsoDetails  = m_model->settingValue("MQTT_PUBLISH_QSO", "0") == "1";
+    for (const auto& msg : ShackStatus::discoveryMessages(cfg.topicPrefix, call,
+                                                          versionString(), qsoDetails)) {
+        // Discovery off: retained deletes, so entities announced earlier go away.
+        m_mqtt->publishAbsolute(msg.topic, haDiscovery ? msg.payload : QByteArray{});
+    }
+    // Privacy: switching QSO details off must also clear the retained value,
+    // or the broker keeps serving the last callsign to anyone who subscribes.
+    if (!qsoDetails)
+        m_mqtt->publishState(QString::fromLatin1(ShackStatus::kLastQso), QByteArray{});
+
+    publishRadioStatus();
+    publishQsoStatus();
+}
+
+void MainWindow::publishRadioStatus()
+{
+    if (!m_mqtt) return;
+    using namespace ShackStatus;
+    const bool linked = (m_tci && m_tci->connected()) || (m_rigctld && m_rigctld->connected());
+    m_mqtt->publishState(QString::fromLatin1(kConnected), onOff(linked));
+    m_mqtt->publishState(QString::fromLatin1(kTransmitting),
+                         onOff(m_tci && m_tci->connected() && m_tci->transmitting()));
+    const QByteArray hz = frequencyPayload(m_curFreqMhz);
+    if (!hz.isEmpty())        m_mqtt->publishState(QString::fromLatin1(kFrequency), hz);
+    if (!m_curMode.isEmpty()) m_mqtt->publishState(QString::fromLatin1(kMode),
+                                                   modePayload(m_curMode, m_curSubmode));
+    if (!m_curBand.isEmpty()) m_mqtt->publishState(QString::fromLatin1(kBand),
+                                                   m_curBand.toUtf8());
+}
+
+void MainWindow::publishQsoStatus(qint64 addedQsoId)
+{
+    if (!m_mqtt || !m_model || !m_model->isOpen()) return;
+    if (m_model->settingValue("MQTT_ENABLE", "0") != "1") return;
+    LogbookFilter today;
+    today.dateFrom = today.dateTo = QDateTime::currentDateTimeUtc().toString("yyyyMMdd");
+    m_mqtt->publishState(QString::fromLatin1(ShackStatus::kCountToday),
+                         QByteArray::number(m_model->countQsos(today)));
+    if (addedQsoId >= 0 && m_model->settingValue("MQTT_PUBLISH_QSO", "0") == "1") {
+        bool ok = false;
+        const Qso q = m_model->getQso(addedQsoId, &ok);
+        if (ok) m_mqtt->publishState(QString::fromLatin1(ShackStatus::kLastQso),
+                                     ShackStatus::lastQsoPayload(q));
+    }
+}
+
+double MainWindow::txPowerForNewQso() const
+{
+    // #23: log what the radio measured rather than a number typed once in
+    // Settings. Only TCI reports it; rigctld and a disconnected radio keep the
+    // default, as does an operator who has switched the feature off. The
+    // measured value is the radio's forward power — with an amplifier in line
+    // it is the drive level (see the Settings tooltip).
+    if (m_model->settingValue("TX_PWR_FROM_RADIO", "1") == "1"
+        && m_tci && m_tci->connected()) {
+        if (const auto w = m_tci->measuredTxPowerW())
+            return *w;
+    }
+    return m_model->defaultTxPwr();
 }
 
 // ── Status bar ───────────────────────────────────────────────────────────

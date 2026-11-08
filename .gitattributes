@@ -1,20 +1,15 @@
 # Line-ending policy.
 #
-# WHY THIS EXISTS: every tracked text file in this repo is currently stored
-# with DOUBLED line endings (\r\r\n). They were committed containing CRLF,
-# and `core.autocrlf=true` on a Windows clone then converts the \n again on
-# checkout, giving \r\r\n in the working tree. MSVC reports the stray CR as
+# WHY THIS EXISTS: 60 tracked text files were once stored in git with
+# DOUBLED line endings (\r\r\n), which MSVC reports as
 #     warning C4335: Mac file format detected
-# on essentially every file, on every build.
+# on every build. They are now stored with LF (issue #19); this file keeps
+# it that way: git stores these types as LF and converts on checkout.
 #
-# This file fixes the policy going FORWARD: `text=auto` tells git to store
-# these types with LF in the object database and convert on checkout, so new
-# and re-added files stop compounding.
-#
-# It does NOT fix the 102 files already stored wrong -- that needs a
-# one-shot `git add --renormalize .`, which touches every file in the repo
-# and so wants its own commit on a quiet day, not one mixed in with feature
-# work. Tracked as an issue; see the repo issue list for "line endings".
+# If it ever recurs, do NOT reach for `git add --renormalize .` -- it cleans
+# the WORKING-TREE file, strips only the CR directly before each LF, and so
+# turns \r\r\n into \r\n in the repo (still CRLF), and a second run changes
+# nothing. Strip every CR from the files themselves, then `git add`.
 
 *                text=auto
 
