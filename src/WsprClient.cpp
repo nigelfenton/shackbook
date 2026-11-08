@@ -108,61 +108,50 @@ void WsprClient::poll()
             this, &WsprClient::onReplyFinished);
 }
 
-void WsprClient::onReplyFinished()
+// Static, socket-free: the parse rules live here so they can be tested
+// without a radio. onReplyFinished() is a thin wrapper that owns the
+// watermark and the signals.
+QVector<SpotData> WsprClient::spotsFromStatus(const QByteArray& json, qint64 sinceT,
+                                              qint64* newestT, QString* error,
+                                              QString* state, QString* clockSource)
 {
-    QNetworkReply* reply = m_inFlight;
-    m_inFlight = nullptr;
-    if (!reply) return;
-    reply->deleteLater();
+    QVector<SpotData> out;
+    if (newestT) *newestT = 0;
+    if (error) error->clear();
+    if (state) state->clear();
+    if (clockSource) clockSource->clear();
 
-    if (reply->error() != QNetworkReply::NoError) {
-        m_lastError = reply->errorString();
-        emit pollCompleted(0, m_lastError);
-        return;
-    }
-
-    const QByteArray body = reply->readAll();
     QJsonParseError pe;
-    const QJsonDocument doc = QJsonDocument::fromJson(body, &pe);
+    const QJsonDocument doc = QJsonDocument::fromJson(json, &pe);
     if (pe.error != QJsonParseError::NoError || !doc.isObject()) {
-        m_lastError = QString("JSON parse: %1").arg(pe.errorString());
-        emit pollCompleted(0, m_lastError);
-        return;
+        if (error) *error = QString("JSON parse: %1").arg(pe.errorString());
+        return out;
     }
     const QJsonObject root = doc.object();
 
-    // Guard against pointing this at some other HTTP service on the LAN.
+    // Guard against pointing this at some other HTTP service on the LAN:
+    // parse nothing unless the document identifies itself as the agent.
     if (root.value(QStringLiteral("agent")).toString() != QLatin1String("AetherWSPR")) {
-        m_lastError = QStringLiteral("not an AetherWSPR agent (no agent:\"AetherWSPR\")");
-        emit pollCompleted(0, m_lastError);
-        return;
+        if (error) *error = QStringLiteral("not an AetherWSPR agent (no agent:\"AetherWSPR\")");
+        return out;
     }
-    m_lastError.clear();
 
-    const QString state = root.value(QStringLiteral("state")).toString();
-    const QString clock = root.value(QStringLiteral("clock_source")).toString();
-    if (state != m_agentState || clock != m_clockSource) {
-        m_agentState  = state;
-        m_clockSource = clock;
-        emit agentStateChanged(m_agentState, m_clockSource);
-    }
+    if (state) *state = root.value(QStringLiteral("state")).toString();
+    if (clockSource) *clockSource = root.value(QStringLiteral("clock_source")).toString();
+
+    // sinceT == 0 means "priming": learn the newest timestamp but emit
+    // nothing, so connecting does not replay the whole ring.
+    const bool priming = (sinceT == 0);
+    qint64 newest = sinceT;
 
     const QJsonArray spots = root.value(QStringLiteral("spots")).toArray();
-
-    // First successful poll: adopt the newest timestamp without emitting, so
-    // connecting does not flood the panel with up to 2000 historic spots.
-    const bool priming = (m_lastSpotT == 0);
-
-    qint64 newest = m_lastSpotT;
-    int count = 0;
-
     for (const auto& v : spots) {
         if (!v.isObject()) continue;
         const QJsonObject o = v.toObject();
 
         const qint64 t = o.value(QStringLiteral("t")).toVariant().toLongLong();
         if (t > newest) newest = t;
-        if (!priming && t <= m_lastSpotT) continue;   // already seen
+        if (priming || t <= sinceT) continue;   // priming, or already seen
 
         SpotData s;
         s.call = o.value(QStringLiteral("call")).toString().trimmed().toUpper();
@@ -176,7 +165,7 @@ void WsprClient::onReplyFinished()
         s.mode    = QStringLiteral("WSPR");
 
         // The decode's own numbers, which are what make a WSPR spot worth
-        // seeing: how weak it was, and how far the TX power had to carry it.
+        // seeing: how weak it was, and how little power carried it.
         QStringList parts;
         const int snr      = o.value(QStringLiteral("snr")).toVariant().toInt();
         const QString grid = o.value(QStringLiteral("grid")).toString().trimmed();
@@ -196,13 +185,46 @@ void WsprClient::onReplyFinished()
         s.source      = QStringLiteral("WSPR");
         s.receivedAt  = QDateTime::fromSecsSinceEpoch(t, QTimeZone::UTC);
         s.lifetimeSec = kWsprSpotLifetimeSec;
-
-        emit spotReceived(s);
-        ++count;
+        out.append(s);
     }
 
-    m_lastSpotT = newest;
-    emit pollCompleted(count, QString{});
+    if (newestT) *newestT = newest;
+    return out;
 }
 
+void WsprClient::onReplyFinished()
+{
+    QNetworkReply* reply = m_inFlight;
+    m_inFlight = nullptr;
+    if (!reply) return;
+    reply->deleteLater();
+
+    if (reply->error() != QNetworkReply::NoError) {
+        m_lastError = reply->errorString();
+        emit pollCompleted(0, m_lastError);
+        return;
+    }
+
+    qint64 newest = 0;
+    QString err, state, clock;
+    const QVector<SpotData> spots =
+        spotsFromStatus(reply->readAll(), m_lastSpotT, &newest, &err, &state, &clock);
+
+    if (!err.isEmpty()) {
+        m_lastError = err;
+        emit pollCompleted(0, m_lastError);
+        return;
+    }
+    m_lastError.clear();
+
+    if (state != m_agentState || clock != m_clockSource) {
+        m_agentState  = state;
+        m_clockSource = clock;
+        emit agentStateChanged(m_agentState, m_clockSource);
+    }
+
+    for (const SpotData& s : spots) emit spotReceived(s);
+    m_lastSpotT = newest;
+    emit pollCompleted(static_cast<int>(spots.size()), QString{});
+}
 } // namespace ShackBook

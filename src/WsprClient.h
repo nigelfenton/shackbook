@@ -38,7 +38,9 @@
 
 #include "SpotData.h"
 
+#include <QByteArray>
 #include <QObject>
+#include <QVector>
 #include <QString>
 #include <QUrl>
 
@@ -72,6 +74,20 @@ public:
     // status bar. Empty until the first successful poll.
     QString agentState() const { return m_agentState; }
     QString clockSource() const { return m_clockSource; }
+
+    // Parse an agent /v1/status document into spots, applying the same
+    // filtering the live poller uses. Static and socket-free so the parse
+    // rules are unit-testable without a radio or a network.
+    //
+    //   json      raw reply body
+    //   sinceT    emit only spots with t > sinceT; pass 0 to accept all
+    //   newestT   out: newest t seen (0 if none), for the caller's watermark
+    //   error     out: non-empty if the document is unusable
+    // Returns the spots to emit, oldest first.
+    static QVector<ShackBook::SpotData> spotsFromStatus(
+        const QByteArray& json, qint64 sinceT,
+        qint64* newestT, QString* error,
+        QString* state = nullptr, QString* clockSource = nullptr);
 
 signals:
     void spotReceived(const ShackBook::SpotData& spot);
