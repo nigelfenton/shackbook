@@ -14,6 +14,7 @@
 #include "SpotIndex.h"
 #include "DxClusterClient.h"
 #include "PotaClient.h"
+#include "WsprClient.h"
 #include "N1mmSpotClient.h"
 #include "ContestLayout.h"
 #include "CallsignLookup.h"
@@ -215,6 +216,7 @@ MainWindow::MainWindow(QWidget* parent)
       m_spotIndex(new SpotIndex(this)),
       m_dxc(new DxClusterClient(this)),
       m_pota(new PotaClient(this)),
+      m_wspr(new WsprClient(this)),
       m_n1mm(new N1mmSpotClient(this)),
       m_spotPurgeTimer(new QTimer(this))
 {
@@ -342,6 +344,12 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::onPotaSpotReceived);
     connect(m_pota, &PotaClient::pollCompleted,
             this, &MainWindow::onPotaPollCompleted);
+    connect(m_wspr, &WsprClient::spotReceived,
+            this, &MainWindow::onWsprSpotReceived);
+    connect(m_wspr, &WsprClient::pollCompleted,
+            this, &MainWindow::onWsprPollCompleted);
+    connect(m_wspr, &WsprClient::agentStateChanged,
+            this, &MainWindow::onWsprAgentStateChanged);
     connect(m_n1mm, &N1mmSpotClient::spotReceived,
             this, &MainWindow::onN1mmSpotReceived);
     connect(m_n1mm, &N1mmSpotClient::spotDeleted,
@@ -445,6 +453,7 @@ MainWindow::MainWindow(QWidget* parent)
     applyAutoConnectFromSettings();
     applyClusterConfigFromSettings();
     applyPotaConfigFromSettings();
+    applyWsprConfigFromSettings();
     applyN1mmConfigFromSettings();
     applyLookupConfigFromSettings();
     applyMqttConfigFromSettings();
@@ -1564,6 +1573,7 @@ void MainWindow::onSettings()
         // (no-op if nothing changed; enables/disables/reconnects otherwise).
         applyClusterConfigFromSettings();
         applyPotaConfigFromSettings();
+        applyWsprConfigFromSettings();
         applyN1mmConfigFromSettings();
         applyLookupConfigFromSettings();
         applyMqttConfigFromSettings();
@@ -2494,6 +2504,80 @@ void MainWindow::applyPotaConfigFromSettings()
     m_pota->start(sec);
     if (m_dxcLog)
         m_dxcLog->appendPlainText(QString("[apply] POTA polling started (every %1 s)").arg(sec));
+}
+
+// ── AetherWSPR spot feed ───────────────────────────────────
+//
+// Spots from a WSPR receiver running ON the radio (AetherWSPR). These are
+// one-way beacon receptions, NOT QSOs: they go to SpotIndex, which is
+// memory-only, and are never written to the logbook. Putting them in the log
+// would let awardsSummary() count them toward DXCC/WAS/grids.
+
+void MainWindow::onWsprSpotReceived(const SpotData& spot)
+{
+    if (!m_spotIndex) return;
+    m_spotIndex->addOrUpdate(spot);
+    refreshStatusBar();
+}
+
+void MainWindow::onWsprPollCompleted(int spots, const QString& errorOrEmpty)
+{
+    if (m_dxcLog) {
+        if (!errorOrEmpty.isEmpty()) {
+            m_dxcLog->appendPlainText(
+                QString("[%1] WSPR poll failed: %2")
+                    .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+                    .arg(errorOrEmpty));
+        } else if (spots > 0) {
+            m_dxcLog->appendPlainText(
+                QString("[%1] WSPR: %2 new spot(s)")
+                    .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+                    .arg(spots));
+        }
+    }
+    refreshStatusBar();
+}
+
+void MainWindow::onWsprAgentStateChanged(const QString& state,
+                                         const QString& clockSource)
+{
+    if (!m_dxcLog) return;
+    // "waiting_clock" is the one an operator needs told about: the receiver
+    // is installed and healthy but will never decode until its clock is
+    // considered synced, and nothing else in the UI would explain the silence.
+    QString note = QString("[%1] WSPR agent: %2")
+                       .arg(QDateTime::currentDateTime().toString("HH:mm:ss"))
+                       .arg(state.isEmpty() ? QStringLiteral("(unknown)") : state);
+    if (!clockSource.isEmpty()) note += QString(" (clock: %1)").arg(clockSource);
+    if (state == QLatin1String("waiting_clock"))
+        note += QStringLiteral("  — no spots will be decoded until the clock is synced");
+    m_dxcLog->appendPlainText(note);
+}
+
+void MainWindow::applyWsprConfigFromSettings()
+{
+    if (!m_model || !m_wspr) return;
+    const bool enable = m_model->settingValue("WSPR_ENABLE", "0") == "1";
+    if (!enable) {
+        m_wspr->stop();
+        return;
+    }
+    const QString host = m_model->settingValue("WSPR_HOST", "").trimmed();
+    if (host.isEmpty()) {
+        m_wspr->stop();
+        if (m_dxcLog)
+            m_dxcLog->appendPlainText("[apply] WSPR enabled but no agent host set");
+        return;
+    }
+    int port = m_model->settingValue("WSPR_PORT", "48995").toInt();
+    if (port <= 0 || port > 65535) port = 48995;
+    int sec = m_model->settingValue("WSPR_POLL_SEC", "60").toInt();
+    if (sec < 10) sec = 10;
+    m_wspr->setAgent(host, port);
+    m_wspr->start(sec);
+    if (m_dxcLog)
+        m_dxcLog->appendPlainText(
+            QString("[apply] WSPR polling %1:%2 (every %3 s)").arg(host).arg(port).arg(sec));
 }
 
 // ── Callsign lookup chain ────────────────────────────────────────────────

@@ -105,6 +105,8 @@ set(SHACKBOOK_SOURCES
     src/DxClusterClient.h
     src/PotaClient.cpp
     src/PotaClient.h
+    src/WsprClient.cpp
+    src/WsprClient.h
     # ── Callsign lookup (worked-before / cty.dat / QRZ-HamQTH-callook) ──
     src/CtyDat.cpp
     src/CtyDat.h
@@ -283,6 +285,18 @@ if(SHACKBOOK_TESTS)
     target_include_directories(durability_test PRIVATE src)
     target_link_libraries(durability_test PRIVATE Qt6::Core Qt6::Sql)
     add_test(NAME durability_test COMMAND durability_test)
+
+    # WsprClient needs Qt6::Network for QNetworkAccessManager, even though
+    # spotsFromStatus itself is socket-free.
+    add_executable(wspr_client_test
+        tests/wspr_client_test.cpp
+        src/WsprClient.cpp
+        src/WsprClient.h
+        src/SpotData.h
+    )
+    target_include_directories(wspr_client_test PRIVATE src)
+    target_link_libraries(wspr_client_test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME wspr_client_test COMMAND wspr_client_test)
 
     add_executable(aprs_decode_test
         tests/aprs_decode_test.cpp

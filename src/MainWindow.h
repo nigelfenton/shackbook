@@ -48,6 +48,7 @@ class RigctldSupervisor;
 class SpotIndex;
 class DxClusterClient;
 class PotaClient;
+class WsprClient;
 class N1mmSpotClient;
 class CallsignLookup;
 class SectionMapDialog;
@@ -128,6 +129,9 @@ private slots:
     // POTA (Phase 3)
     void onPotaSpotReceived(const ShackBook::SpotData& spot);
     void onPotaPollCompleted(int spots, const QString& errorOrEmpty);
+    void onWsprSpotReceived(const ShackBook::SpotData& spot);
+    void onWsprPollCompleted(int spots, const QString& errorOrEmpty);
+    void onWsprAgentStateChanged(const QString& state, const QString& clockSource);
     void onN1mmSpotReceived(const ShackBook::SpotData& spot);
     void onN1mmSpotDeleted(const QString& call, double freqMhz);
 
@@ -171,6 +175,7 @@ private:
     void applyAutoConnectFromSettings();
     void applyClusterConfigFromSettings();
     void applyPotaConfigFromSettings();
+    void applyWsprConfigFromSettings();
     void applyN1mmConfigFromSettings();
     void applyLookupConfigFromSettings();
     // MQTT shack status for Home Assistant (#24). Publishing is best effort:
@@ -215,6 +220,7 @@ private:
     SpotIndex*       m_spotIndex{nullptr};
     DxClusterClient* m_dxc{nullptr};
     PotaClient*      m_pota{nullptr};
+    WsprClient*      m_wspr{nullptr};
     N1mmSpotClient*  m_n1mm{nullptr};
     MqttPublisher*   m_mqtt{nullptr};
     QTimer*          m_mqttDayTimer{nullptr};   // rolls qso/count_today over at 00:00 UTC
