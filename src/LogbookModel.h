@@ -120,6 +120,14 @@ public:
     };
     AwardsSummary awardsSummary() const;
 
+    // Call / band / mode for every logged QSO, for building a NeedIndex
+    // (src/SpotNeed.h, #43). Three columns rather than whole Qso rows: the
+    // caller re-resolves each CALLSIGN through cty.dat, so the stored country
+    // and dxcc columns are deliberately not read — see the note at the top of
+    // SpotNeed.h for why matching on them is wrong.
+    struct WorkedSlot { QString call, band, mode; };
+    QVector<WorkedSlot> workedSlots() const;
+
     // ── Import ────────────────────────────────────────────────────────
     struct AdifImportResult {
         bool ok{false};       // false == file-level failure; see errorString()
