@@ -2281,7 +2281,10 @@ void MainWindow::onShowSpotIndex()
             // badge can be checked rather than taken on trust.
             if (c == ColNeed && need != SpotNeed::Unknown && !entity.isEmpty()) {
                 const QStringList b = needIdx.bandsFor(entity);
-                const QStringList m = needIdx.modesFor(entity);
+                // humanModesFor, not modesFor: the latter also holds
+                // "SSB/USB"-style composites that status() needs and a
+                // person does not want to read.
+                const QStringList m = needIdx.humanModesFor(entity);
                 item->setToolTip(b.isEmpty()
                     ? QStringLiteral("%1 — never worked").arg(entity)
                     : QStringLiteral("%1 — worked on %2 (%3)")

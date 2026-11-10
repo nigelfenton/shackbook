@@ -303,6 +303,20 @@ int main(int argc, char** argv)
     check(baseModeAndSub(QStringLiteral("  cw  ")).mode == QLatin1String("CW"),
           "surrounding whitespace is trimmed");
 
+    // humanModesFor() drops the composites that status() needs.
+    {
+        NeedIndex h;
+        h.add(QStringLiteral("Japan"), QStringLiteral("20m"),
+              QStringLiteral("SSB"), QStringLiteral("USB"));
+        h.add(QStringLiteral("Japan"), QStringLiteral("20m"),
+              QStringLiteral("RTTY"), QStringLiteral("ASCI"));
+        check(h.modesFor(QStringLiteral("Japan")).contains(QStringLiteral("SSB/USB")),
+              "modesFor keeps the composite status() needs");
+        const QStringList human = h.humanModesFor(QStringLiteral("Japan"));
+        check(human == QStringList({QStringLiteral("RTTY"), QStringLiteral("SSB")}),
+              "humanModesFor shows RTTY, SSB - no composites for a person to read");
+    }
+
     std::printf("\nspot_need_test: %d check(s) failed\n", failures);
     return failures == 0 ? 0 : 1;
 }

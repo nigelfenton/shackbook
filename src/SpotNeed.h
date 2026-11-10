@@ -235,6 +235,17 @@ public:
         return l;
     }
 
+    // modesFor() without the "MODE/SUBMODE" composites, for showing a person.
+    // "CW, FT8, RTTY, SSB" rather than "CW, FT8, RTTY, RTTY/ASCI, SSB,
+    // SSB/USB" — the composites exist for status(), not for reading.
+    QStringList humanModesFor(const QString& entity) const
+    {
+        QStringList out;
+        for (const QString& m : modesFor(entity))
+            if (!m.contains(QLatin1Char('/'))) out << m;
+        return out;
+    }
+
     // The verdict for one spot.
     //
     // `entity` is CtyDat::Entity::country for the SPOT's callsign; empty means
