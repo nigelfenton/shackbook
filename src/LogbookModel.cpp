@@ -1035,6 +1035,37 @@ LogbookModel::AwardsSummary LogbookModel::awardsSummary() const
     return a;
 }
 
+QVector<LogbookModel::WorkedSlot> LogbookModel::workedSlots() const
+{
+    QVector<WorkedSlot> out;
+    if (!m_db.isOpen()) return out;
+
+    QSqlQuery q(m_db);
+    // Deliberately NOT country or dxcc: the caller resolves the CALLSIGN
+    // through the same cty.dat it uses for spots, so both sides agree by
+    // construction (src/SpotNeed.h). Measured on a 16,538-QSO log, the stored
+    // country matched cty.dat for only 90.3% of QSOs and was ambiguous in both
+    // directions, so reading it here would produce wrong ATNO badges.
+    // SUBMODE is read because the mode column alone cannot answer the
+    // question: this log stores FT4 as mode=MFSK submode=FT4 (294 QSOs), and
+    // phone as mode=SSB submode=USB/LSB. Comparing MODE only badged an FT4
+    // spot NEW MODE against an entity worked on FT4. See SpotNeed.h.
+    if (!q.exec("SELECT call, band, mode, submode FROM qsos"
+                " WHERE call IS NOT NULL AND call != ''"))
+        return out;
+
+    out.reserve(1024);
+    while (q.next()) {
+        WorkedSlot s;
+        s.call = q.value(0).toString().trimmed().toUpper();
+        s.band = q.value(1).toString();
+        s.mode = q.value(2).toString();
+        s.submode = q.value(3).toString();
+        if (!s.call.isEmpty()) out.push_back(std::move(s));
+    }
+    return out;
+}
+
 // ───────────────────────── ADIF import ─────────────────────────
 
 bool LogbookModel::importDuplicateExists(const Qso& q) const

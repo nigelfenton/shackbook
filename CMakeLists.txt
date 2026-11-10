@@ -480,6 +480,28 @@ if(SHACKBOOK_TESTS)
     target_link_libraries(rigctld_supervisor_test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME rigctld_supervisor_test COMMAND rigctld_supervisor_test)
 
+    # SpotNeed.h is header-only and deliberately free of SQL and widgets, so
+    # the need rule can be exercised without a database or a GUI (#43).
+    add_executable(spot_need_test
+        tests/spot_need_test.cpp
+        src/SpotNeed.h
+        src/Band.h
+    )
+    target_include_directories(spot_need_test PRIVATE src)
+    target_link_libraries(spot_need_test PRIVATE Qt6::Core)
+    add_test(NAME spot_need_test COMMAND spot_need_test)
+
+    # A hand-run probe, NOT an add_test: it needs a real logbook, which only
+    # exists on an operator's machine. See the file header (#43).
+    add_executable(spot_need_reallog_probe
+        tests/spot_need_reallog_probe.cpp
+        src/CtyDat.cpp
+        src/CtyDat.h
+        src/SpotNeed.h
+    )
+    target_include_directories(spot_need_reallog_probe PRIVATE src)
+    target_link_libraries(spot_need_reallog_probe PRIVATE Qt6::Core Qt6::Sql)
+
     add_executable(adif_mode_map_test
         tests/adif_mode_map_test.cpp
         src/LogbookModel.cpp
