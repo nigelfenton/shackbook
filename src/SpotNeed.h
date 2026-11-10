@@ -78,6 +78,94 @@ inline bool spotNeedIsWanted(SpotNeed n)
         || n == SpotNeed::NewMode || n == SpotNeed::NewSlot;
 }
 
+// ─────────────────────── mode normalisation ───────────────────────
+//
+// ⛔ THE SPOT AND THE LOG SPEAK DIFFERENT MODE VOCABULARIES. Comparing the
+// raw strings badges a worked entity as NEW MODE, measured on a real
+// 16,538-QSO log (2026-11-10):
+//
+//   • an N1MM+/DXLog bandmap spot carries USB or LSB; the log stores SSB
+//     (AdifReader normalises USB/LSB -> SSB + SUBMODE on import, as ADIF 3
+//     wants). 8,887 QSOs — 53.7% of that log — were unreachable by a phone
+//     spot: "20m Italy USB" came back NEW MODE against 20m Italy SSB.
+//   • a POTA spot carries FT4; the log stores mode=MFSK, submode=FT4. 294
+//     QSOs, 131 of them US/20m, were unreachable the same way.
+//   • AetherWSPR hard-codes WSPR, which no log here stores as a MODE.
+//
+// LogbookModel::adifModeFromTciMode() already folds a RADIO's mode string
+// (USB/LSB/CWR/NFM/DFM, Hamlib's -D suffix) for exactly this reason — issue
+// #16. It is not reused here because it lives behind Qt6::Sql and this header
+// is deliberately free of SQL so the rule can be unit-tested on its own; the
+// folds below agree with it and the two are asserted against each other in
+// tests/spot_need_test.cpp.
+//
+// ⚠ A FOLD ALONE IS NOT ENOUGH. Folding FT4 -> MFSK would make an FT4 spot
+// look worked by an MFSK16 QSO (this log holds one). So the key is base mode
+// AND submode on both sides: the log's own submode column is read, and a
+// spot's "FT4" becomes MFSK+FT4 rather than bare MFSK.
+struct BaseMode {
+    QString mode;      // ADIF MODE ("SSB", "MFSK", "CW")
+    QString submode;   // ADIF SUBMODE ("USB", "FT4"), empty when there is none
+};
+
+// Fold one mode string — from a spot, or from a log's MODE column — to an
+// ADIF base mode plus submode. An unrecognised string is passed through
+// upper-cased rather than dropped: an unknown mode must not silently become
+// "no mode" (adif_mode_map_test's own warning), and a log and a spot that
+// both say the same unknown thing should still match.
+inline BaseMode baseModeAndSub(const QString& raw, const QString& rawSub = QString())
+{
+    QString m = raw.trimmed().toUpper();
+    QString s = rawSub.trimmed().toUpper();
+    if (m.isEmpty()) return {QString(), QString()};
+
+    // Hamlib marks a data mode with "-D" (USB-D, FM-D). Log the carrier.
+    if (m.endsWith(QLatin1String("-D")))
+        m.chop(2);
+
+    // Phone: USB/LSB/PHONE are all SSB. The SIDEBAND IS DROPPED, not kept as
+    // a submode — which is where this fix first went wrong.
+    //
+    // ⚠ A submode only belongs in the key when it is a mode the operator
+    // CHOSE. FT4 and MFSK16 are different modes that ADIF files under MFSK,
+    // so working one does not work the other. A sideband is not like that:
+    // 20m is USB and 40m is LSB by convention, nobody "works a band on LSB"
+    // as an achievement, and the log stores the sideband only sometimes
+    // (8,687 bare SSB QSOs vs 200 carrying USB/LSB in the measured log). Key
+    // on it and a USB spot asks a question a plain SSB QSO cannot answer, so
+    // every phone spot came back NEW MODE — caught by the three checks that
+    // failed when this normaliser was first written.
+    if (m == QLatin1String("USB") || m == QLatin1String("LSB")
+        || m == QLatin1String("PHONE")) {
+        return {QStringLiteral("SSB"), QString()};
+    }
+    // Reverse sidebands are the same emission; ADIF has no separate mode.
+    if (m == QLatin1String("CWR") || m == QLatin1String("CWL")
+             || m == QLatin1String("CWU")) {
+        m = QStringLiteral("CW");
+    } else if (m == QLatin1String("RTTYR")) {
+        m = QStringLiteral("RTTY");
+    } else if (m == QLatin1String("NFM") || m == QLatin1String("DFM")) {
+        m = QStringLiteral("FM");
+    } else if (m == QLatin1String("SAM")) {
+        m = QStringLiteral("AM");
+    }
+    // MFSK family: ADIF's MODE is MFSK, the flavour is the SUBMODE. A spot
+    // that says only "FT4" carries the submode in the mode field.
+    else if (m == QLatin1String("FT4") || m == QLatin1String("MFSK16")
+             || m == QLatin1String("MFSK32") || m == QLatin1String("JS8")) {
+        if (s.isEmpty()) s = m;
+        m = QStringLiteral("MFSK");
+    }
+    // PSK family, same shape.
+    else if (m == QLatin1String("PSK31") || m == QLatin1String("PSK63")
+             || m == QLatin1String("PSK125")) {
+        if (s.isEmpty()) s = m;
+        m = QStringLiteral("PSK");
+    }
+    return {m, s};
+}
+
 // What the log has, keyed by the entity name CtyDat::lookup() returns.
 //
 // Built once from the log and then asked about many spots. Populate it with
@@ -89,16 +177,28 @@ public:
     // callsign, not the stored country column. Band and mode are matched
     // case-insensitively; empty values are kept out of the sets so a QSO
     // logged without a mode cannot make every mode look worked.
-    void add(const QString& entity, const QString& band, const QString& mode)
+    void add(const QString& entity, const QString& band, const QString& mode,
+             const QString& submode = QString())
     {
         if (entity.isEmpty()) return;
         Slots& s = m_byEntity[entity];
         s.any = true;
         const QString b = band.trimmed().toUpper();
-        const QString m = mode.trimmed().toUpper();
+        const BaseMode bm = baseModeAndSub(mode, submode);
         if (!b.isEmpty()) s.bands.insert(b);
-        if (!m.isEmpty()) s.modes.insert(m);
-        if (!b.isEmpty() && !m.isEmpty()) s.slotSet.insert(b + QLatin1Char('|') + m);
+        if (!bm.mode.isEmpty()) {
+            s.modes.insert(bm.mode);
+            // The exact slot the operator holds, submode included, so an FT4
+            // QSO does not make an MFSK16 spot look worked (and vice versa).
+            if (!bm.submode.isEmpty())
+                s.modes.insert(bm.mode + QLatin1Char('/') + bm.submode);
+        }
+        if (!b.isEmpty() && !bm.mode.isEmpty()) {
+            s.slotSet.insert(b + QLatin1Char('|') + bm.mode);
+            if (!bm.submode.isEmpty())
+                s.slotSet.insert(b + QLatin1Char('|') + bm.mode
+                                 + QLatin1Char('/') + bm.submode);
+        }
     }
 
     bool isEmpty() const { return m_byEntity.isEmpty(); }
@@ -122,6 +222,10 @@ public:
         l.sort();
         return l;
     }
+    // ⚠ Holds BOTH base modes and "MODE/SUBMODE" composites ("MFSK" and
+    // "MFSK/FT4"), because status() must distinguish "worked this mode" from
+    // "worked this exact flavour". A caller wanting a human list should drop
+    // the entries containing '/'.
     QStringList modesFor(const QString& entity) const
     {
         const auto it = m_byEntity.constFind(entity);
@@ -140,7 +244,8 @@ public:
     // cluster spots often lack one — and then only ATNO and NewBand can be
     // reported, never NewMode or NewSlot, because nothing is known to compare.
     SpotNeed status(const QString& entity, const QString& band,
-                    const QString& mode) const
+                    const QString& mode,
+                    const QString& submode = QString()) const
     {
         if (entity.isEmpty()) return SpotNeed::Unknown;
         const auto it = m_byEntity.constFind(entity);
@@ -151,18 +256,36 @@ public:
         if (b.isEmpty()) return SpotNeed::Unknown;
         if (!it->bands.contains(b)) return SpotNeed::NewBand;
 
-        const QString m = mode.trimmed().toUpper();
-        if (m.isEmpty()) return SpotNeed::Worked;   // band is held; cannot say more
-        if (!it->modes.contains(m)) return SpotNeed::NewMode;
-        if (!it->slotSet.contains(b + QLatin1Char('|') + m)) return SpotNeed::NewSlot;
+        // Normalise the SPOT's mode exactly as the log's was normalised when
+        // the index was built, so the two can be compared at all.
+        const BaseMode bm = baseModeAndSub(mode, submode);
+        if (bm.mode.isEmpty()) return SpotNeed::Worked;  // band held; cannot say more
+
+        // A spot that names a submode is judged on the exact slot; one that
+        // names only a base mode is judged on the base mode, because a bare
+        // "MFSK" spot says nothing about which flavour.
+        const QString modeKey = bm.submode.isEmpty()
+            ? bm.mode
+            : bm.mode + QLatin1Char('/') + bm.submode;
+
+        if (!it->modes.contains(modeKey)) {
+            // Base mode worked, this flavour not: that is a new slot within a
+            // mode already held, not a new mode.
+            if (!bm.submode.isEmpty() && it->modes.contains(bm.mode))
+                return SpotNeed::NewSlot;
+            return SpotNeed::NewMode;
+        }
+        if (!it->slotSet.contains(b + QLatin1Char('|') + modeKey))
+            return SpotNeed::NewSlot;
         return SpotNeed::Worked;
     }
 
     // Convenience for a spot that carries a frequency rather than a band name.
     SpotNeed statusForMhz(const QString& entity, double freqMhz,
-                          const QString& mode) const
+                          const QString& mode,
+                          const QString& submode = QString()) const
     {
-        return status(entity, bandForMhz(freqMhz), mode);
+        return status(entity, bandForMhz(freqMhz), mode, submode);
     }
 
 private:

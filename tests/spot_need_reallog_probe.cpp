@@ -70,7 +70,7 @@ int main(int argc, char** argv)
     NeedIndex idx;
     int rows = 0, resolved = 0;
     QSqlQuery q(db);
-    if (!q.exec(QStringLiteral("SELECT call, band, mode FROM qsos"
+    if (!q.exec(QStringLiteral("SELECT call, band, mode, submode FROM qsos"
                                " WHERE call IS NOT NULL AND call != ''"))) {
         std::printf("query failed: %s\n", qPrintable(q.lastError().text()));
         return 1;
@@ -81,7 +81,8 @@ int main(int argc, char** argv)
         const auto e = cty.lookup(call);
         if (!e.valid) continue;
         ++resolved;
-        idx.add(e.country, q.value(1).toString(), q.value(2).toString());
+        idx.add(e.country, q.value(1).toString(), q.value(2).toString(),
+                q.value(3).toString());
     }
 
     std::printf("log: %d QSOs, %d resolved (%.2f%%), %d entities indexed\n\n",
@@ -96,6 +97,14 @@ int main(int argc, char** argv)
         {"EA8ABC", 10.136, "FT8"}, {"ZL1ABC",  3.573, "FT8"},
         {"JA1ABC", 50.313, "FT8"}, {"0L8HQ",  14.025, "CW"},
         {"IK2ABC", 14.025, ""},    {"IK2ABC",   5.000, "CW"},
+        // The mode-vocabulary cases: each of these was a FALSE "NewMode"
+        // before baseModeAndSub() (2026-11-10). A bandmap spot says USB
+        // where the log says SSB; a POTA spot says FT4 where the log says
+        // MFSK/FT4.
+        {"IK2ABC", 14.225, "USB"},  {"IK2ABC", 14.225, "SSB"},
+        {"IK2ABC",  7.150, "LSB"},  {"IK2ABC", 14.080, "FT4"},
+        {"IK2ABC", 14.080, "MFSK"}, {"IK2ABC", 14.025, "CWR"},
+        {"IK2ABC", 14.225, "PHONE"},
     };
     for (const auto& c : cases) {
         const auto e = cty.lookup(QString::fromLatin1(c.call));

@@ -125,7 +125,7 @@ public:
     // caller re-resolves each CALLSIGN through cty.dat, so the stored country
     // and dxcc columns are deliberately not read — see the note at the top of
     // SpotNeed.h for why matching on them is wrong.
-    struct WorkedSlot { QString call, band, mode; };
+    struct WorkedSlot { QString call, band, mode, submode; };
     QVector<WorkedSlot> workedSlots() const;
 
     // ── Import ────────────────────────────────────────────────────────

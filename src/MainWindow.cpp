@@ -2220,7 +2220,7 @@ NeedIndex MainWindow::buildNeedIndex() const
     const auto worked = m_model->workedSlots();
     for (const auto& s : worked) {
         const auto e = m_cty.lookup(s.call);
-        if (e.valid) idx.add(e.country, s.band, s.mode);
+        if (e.valid) idx.add(e.country, s.band, s.mode, s.submode);
     }
     return idx;
 }

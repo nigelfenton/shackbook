@@ -206,6 +206,103 @@ int main(int argc, char** argv)
     check(!spotNeedIsWanted(SpotNeed::Unknown),
           "Unknown is not wanted");
 
+    // ── mode vocabularies: the spot and the log do not use the same words ──
+    //
+    // These are the cases the first version of this suite could not fail,
+    // because every check used CW/SSB/FT8 on BOTH sides. Each one below was a
+    // measured wrong badge on a real 16,538-QSO log (2026-11-10).
+    {
+        NeedIndex idx;
+        // How the log actually stores things: phone as SSB(+sideband
+        // submode), FT4 as MFSK/FT4. 8,887 of that log's QSOs are SSB.
+        idx.add(QStringLiteral("Italy"), QStringLiteral("20m"),
+                QStringLiteral("SSB"));
+        idx.add(QStringLiteral("Spain"), QStringLiteral("20m"),
+                QStringLiteral("SSB"), QStringLiteral("USB"));
+        idx.add(QStringLiteral("Chad"),  QStringLiteral("20m"),
+                QStringLiteral("MFSK"), QStringLiteral("FT4"));
+        idx.add(QStringLiteral("Japan"), QStringLiteral("20m"),
+                QStringLiteral("MFSK"), QStringLiteral("MFSK16"));
+
+        // An N1MM+/DXLog bandmap spot carries USB, not SSB.
+        check(idx.status(QStringLiteral("Italy"), QStringLiteral("20m"),
+                         QStringLiteral("USB")) == SpotNeed::Worked,
+              "a USB spot is Worked against a log that stores SSB");
+        check(idx.status(QStringLiteral("Italy"), QStringLiteral("20m"),
+                         QStringLiteral("LSB")) == SpotNeed::Worked,
+              "an LSB spot is Worked against a log that stores SSB");
+        // POTA says PHONE.
+        check(idx.status(QStringLiteral("Italy"), QStringLiteral("20m"),
+                         QStringLiteral("PHONE")) == SpotNeed::Worked,
+              "a POTA PHONE spot is Worked against a logged SSB QSO");
+        // Hamlib's data suffix: the carrier is what gets logged (issue #16).
+        check(idx.status(QStringLiteral("Italy"), QStringLiteral("20m"),
+                         QStringLiteral("USB-D")) == SpotNeed::Worked,
+              "USB-D folds to SSB rather than reading as a new mode");
+        // A log that recorded the sideband is still matched by a bare SSB spot.
+        check(idx.status(QStringLiteral("Spain"), QStringLiteral("20m"),
+                         QStringLiteral("SSB")) == SpotNeed::Worked,
+              "a bare SSB spot is Worked against a logged SSB/USB QSO");
+        check(idx.status(QStringLiteral("Spain"), QStringLiteral("20m"),
+                         QStringLiteral("USB")) == SpotNeed::Worked,
+              "a USB spot is Worked against a logged SSB/USB QSO too");
+
+        // A POTA FT4 spot against an FT4 QSO stored as MFSK/FT4.
+        check(idx.status(QStringLiteral("Chad"), QStringLiteral("20m"),
+                         QStringLiteral("FT4")) == SpotNeed::Worked,
+              "an FT4 spot is Worked against a log that stores MFSK/FT4");
+
+        // The fold must NOT go too far: FT4 and MFSK16 are both MFSK, and
+        // one does not make the other worked.
+        check(idx.status(QStringLiteral("Japan"), QStringLiteral("20m"),
+                         QStringLiteral("FT4")) == SpotNeed::NewSlot,
+              "FT4 is NOT worked by an MFSK16 QSO - a fold alone would say it was");
+        check(idx.status(QStringLiteral("Chad"), QStringLiteral("20m"),
+                         QStringLiteral("MFSK16")) == SpotNeed::NewSlot,
+              "MFSK16 is NOT worked by an FT4 QSO");
+
+        // Reverse-sideband CW is the same emission.
+        NeedIndex cw;
+        cw.add(QStringLiteral("Peru"), QStringLiteral("40m"), QStringLiteral("CW"));
+        check(cw.status(QStringLiteral("Peru"), QStringLiteral("40m"),
+                        QStringLiteral("CWR")) == SpotNeed::Worked,
+              "CWR folds to CW");
+        check(cw.status(QStringLiteral("Peru"), QStringLiteral("40m"),
+                        QStringLiteral("RTTY")) == SpotNeed::NewMode,
+              "a genuinely new mode is still NEW MODE after normalisation");
+
+        // An unrecognised mode must not become "no mode": a WSPR spot against
+        // a log with no WSPR is a real NEW MODE, not a silent Worked.
+        check(cw.status(QStringLiteral("Peru"), QStringLiteral("40m"),
+                        QStringLiteral("WSPR")) == SpotNeed::NewMode,
+              "an unknown mode (WSPR) is NEW MODE, not silently swallowed");
+        NeedIndex w;
+        w.add(QStringLiteral("Peru"), QStringLiteral("40m"), QStringLiteral("WSPR"));
+        check(w.status(QStringLiteral("Peru"), QStringLiteral("40m"),
+                       QStringLiteral("WSPR")) == SpotNeed::Worked,
+              "an unknown mode still matches ITSELF (passed through, not dropped)");
+    }
+
+    // ── the normaliser on its own ───────────────────────────────────────
+    check(baseModeAndSub(QStringLiteral("usb")).mode == QLatin1String("SSB"),
+          "baseModeAndSub is case-insensitive");
+    // The sideband is DROPPED, not kept: see the note in SpotNeed.h. Keying
+    // on it made every phone spot NEW MODE against a plain SSB log.
+    check(baseModeAndSub(QStringLiteral("USB")).submode.isEmpty(),
+          "USB drops the sideband rather than keying on it");
+    check(baseModeAndSub(QStringLiteral("LSB")).mode == QLatin1String("SSB")
+       && baseModeAndSub(QStringLiteral("LSB")).submode.isEmpty(),
+          "LSB likewise folds to bare SSB");
+    check(baseModeAndSub(QStringLiteral("FT4")).mode == QLatin1String("MFSK")
+       && baseModeAndSub(QStringLiteral("FT4")).submode == QLatin1String("FT4"),
+          "FT4 becomes MFSK/FT4, not bare MFSK");
+    check(baseModeAndSub(QStringLiteral("FM-D")).mode == QLatin1String("FM"),
+          "Hamlib's -D suffix is stripped to the carrier");
+    check(baseModeAndSub(QStringLiteral("")).mode.isEmpty(),
+          "an empty mode stays empty");
+    check(baseModeAndSub(QStringLiteral("  cw  ")).mode == QLatin1String("CW"),
+          "surrounding whitespace is trimmed");
+
     std::printf("\nspot_need_test: %d check(s) failed\n", failures);
     return failures == 0 ? 0 : 1;
 }

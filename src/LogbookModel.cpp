@@ -1046,7 +1046,11 @@ QVector<LogbookModel::WorkedSlot> LogbookModel::workedSlots() const
     // construction (src/SpotNeed.h). Measured on a 16,538-QSO log, the stored
     // country matched cty.dat for only 90.3% of QSOs and was ambiguous in both
     // directions, so reading it here would produce wrong ATNO badges.
-    if (!q.exec("SELECT call, band, mode FROM qsos"
+    // SUBMODE is read because the mode column alone cannot answer the
+    // question: this log stores FT4 as mode=MFSK submode=FT4 (294 QSOs), and
+    // phone as mode=SSB submode=USB/LSB. Comparing MODE only badged an FT4
+    // spot NEW MODE against an entity worked on FT4. See SpotNeed.h.
+    if (!q.exec("SELECT call, band, mode, submode FROM qsos"
                 " WHERE call IS NOT NULL AND call != ''"))
         return out;
 
@@ -1056,6 +1060,7 @@ QVector<LogbookModel::WorkedSlot> LogbookModel::workedSlots() const
         s.call = q.value(0).toString().trimmed().toUpper();
         s.band = q.value(1).toString();
         s.mode = q.value(2).toString();
+        s.submode = q.value(3).toString();
         if (!s.call.isEmpty()) out.push_back(std::move(s));
     }
     return out;
