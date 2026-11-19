@@ -10,6 +10,10 @@ macOS DMG and attaches them to the GitHub release.
 
 ## [Unreleased]
 
+### Changed
+- **New app icon**: the G0JKN "signal ring" ShackBook mark, in every size from 16 to 256 px
+  (the old icon was a single 674×659 image). Used for the program and the Windows installer.
+
 ## [0.9.0] - 2026-10-05
 
 ### Added
