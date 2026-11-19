@@ -143,9 +143,14 @@ set(SHACKBOOK_SOURCES
 
 # Windows: link as a GUI app so no console window appears at launch.
 # Adding shackbook.rc compiles in the app icon (logbook.ico) so Explorer
-# / taskbar / Alt-Tab show it for ShackBook.exe.
+# / taskbar / Alt-Tab show it for ShackBook.exe. It is the G0JKN "signal ring"
+# ShackBook mark at 16-256 px; Qt picks up IDI_ICON1 for the window icon too.
 if(WIN32)
     add_executable(ShackBook WIN32 ${SHACKBOOK_SOURCES} src/shackbook.rc)
+    # rc.exe does not report the .ico as a dependency, so an icon change alone
+    # would leave the old icon in an incremental build.
+    set_source_files_properties(src/shackbook.rc PROPERTIES
+        OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/logbook.ico)
 elseif(APPLE)
     add_executable(ShackBook MACOSX_BUNDLE ${SHACKBOOK_SOURCES})
 else()
