@@ -253,7 +253,12 @@ jobs:
     # build is a plain cross-compile. That keeps the AGL pin above in force
     # for both, and avoids GitHub's Intel runner images, which are being
     # retired.
-    runs-on: macos-14
+    #
+    # macos-15, not macos-14: GitHub retired macos-14 in November 2026 (jobs
+    # were cancelled with "The configuration 'macos-14-arm64-us-default' is
+    # not supported"). macos-15 is still before macOS 26 (Tahoe), so the SDK
+    # still has AGL. When macos-15 goes too, move QT_VERSION instead.
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
