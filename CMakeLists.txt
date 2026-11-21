@@ -41,6 +41,8 @@ set(SHACKBOOK_SOURCES
     src/CwKeyer.h
     src/CwKeyerSettings.cpp
     src/CwKeyerSettings.h
+    src/WsprSettings.cpp
+    src/WsprSettings.h
     src/CwKeyerPanel.cpp
     src/CwKeyerPanel.h
     src/TxPowerTracker.cpp
@@ -302,6 +304,15 @@ if(SHACKBOOK_TESTS)
     target_include_directories(wspr_client_test PRIVATE src)
     target_link_libraries(wspr_client_test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME wspr_client_test COMMAND wspr_client_test)
+
+    add_executable(wspr_settings_test
+        tests/wspr_settings_test.cpp
+        src/WsprSettings.cpp
+        src/WsprSettings.h
+    )
+    target_include_directories(wspr_settings_test PRIVATE src)
+    target_link_libraries(wspr_settings_test PRIVATE Qt6::Core)
+    add_test(NAME wspr_settings_test COMMAND wspr_settings_test)
 
     add_executable(aprs_decode_test
         tests/aprs_decode_test.cpp
