@@ -15,6 +15,7 @@
 // Owns the LogbookModel and a TciClient singleton.
 
 #include "CtyDat.h"
+#include "SpotNeed.h"
 #include "ContestCalendar.h"
 #include "ContestDef.h"
 #include "ContestLayoutController.h"
@@ -124,6 +125,11 @@ private slots:
     void purgeStaleSpots();
     void onShowClusterLog();
     void onShowSpotIndex();
+    // Builds a NeedIndex from the log, resolving each logged CALLSIGN through
+    // m_cty — the same instance a spot's call goes through (#43). Built on
+    // demand rather than cached: the log changes as QSOs are logged, and a
+    // 16.5k-QSO scan takes a few tens of ms.
+    NeedIndex buildNeedIndex() const;
     void onShowLotw();
 
     // POTA (Phase 3)

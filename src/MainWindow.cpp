@@ -2210,6 +2210,21 @@ void MainWindow::onClusterRawLine(const QString& line)
                                   .arg(line));
 }
 
+NeedIndex MainWindow::buildNeedIndex() const
+{
+    NeedIndex idx;
+    if (!m_model || !m_cty.isLoaded()) return idx;   // no log, or no resolver
+
+    // NOT "slots": Qt #defines that as a keyword, and the error it causes
+    // points at the next line rather than this one.
+    const auto worked = m_model->workedSlots();
+    for (const auto& s : worked) {
+        const auto e = m_cty.lookup(s.call);
+        if (e.valid) idx.add(e.country, s.band, s.mode, s.submode);
+    }
+    return idx;
+}
+
 void MainWindow::onShowSpotIndex()
 {
     if (!m_spotIndex) return;
@@ -2232,9 +2247,18 @@ void MainWindow::onShowSpotIndex()
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setAlternatingRowColors(true);
     table->verticalHeader()->setVisible(false);
-    table->setColumnCount(6);
-    table->setHorizontalHeaderLabels({"Freq (MHz)", "Mode", "Call", "Status", "Source", "Comment"});
+    // Column order lives here once: kNeedCol must follow the labels, or the
+    // tooltip and the bold weight land on whatever cell took that index.
+    enum Col { ColFreq = 0, ColMode, ColCall, ColNeed, ColStatus, ColSource,
+               ColComment, ColCount };
+    table->setColumnCount(ColCount);
+    table->setHorizontalHeaderLabels({"Freq (MHz)", "Mode", "Call", "Need",
+                                      "Status", "Source", "Comment"});
     table->horizontalHeader()->setStretchLastSection(true);
+
+    // What each spot would add to the log (#43). Built once for the dialog,
+    // not per row: a 16.5k-QSO scan is tens of ms, but not 300 times.
+    const NeedIndex needIdx = buildNeedIndex();
 
     const auto rows = m_spotIndex->snapshot();
     table->setRowCount(rows.size());
@@ -2243,10 +2267,34 @@ void MainWindow::onShowSpotIndex()
         const QString comment = s.spotter.isEmpty()
             ? s.comment
             : QStringLiteral("%1 (de %2)").arg(s.comment, s.spotter).trimmed();
+        // Resolve the SPOT's callsign through the same cty.dat the log was
+        // scanned with, so the two sides agree by construction (SpotNeed.h).
+        const QString entity =
+            m_cty.isLoaded() ? m_cty.lookup(s.call).country : QString();
+        const SpotNeed need = needIdx.statusForMhz(entity, s.freqMhz, s.mode);
+
         const QStringList cells = {QString::number(s.freqMhz, 'f', 4), s.mode, s.call,
-                                   s.status, s.source, comment};
+                                   spotNeedLabel(need), s.status, s.source, comment};
         for (int c = 0; c < cells.size(); ++c) {
             auto* item = new QTableWidgetItem(cells[c]);
+            // The Need cell carries what the log holds for that entity, so a
+            // badge can be checked rather than taken on trust.
+            if (c == ColNeed && need != SpotNeed::Unknown && !entity.isEmpty()) {
+                const QStringList b = needIdx.bandsFor(entity);
+                // humanModesFor, not modesFor: the latter also holds
+                // "SSB/USB"-style composites that status() needs and a
+                // person does not want to read.
+                const QStringList m = needIdx.humanModesFor(entity);
+                item->setToolTip(b.isEmpty()
+                    ? QStringLiteral("%1 — never worked").arg(entity)
+                    : QStringLiteral("%1 — worked on %2 (%3)")
+                          .arg(entity, b.join(", "), m.join(", ")));
+                if (spotNeedIsWanted(need)) {
+                    QFont f = item->font();
+                    f.setBold(true);
+                    item->setFont(f);
+                }
+            }
             // A logger's contest state is the point of an N1MM spot (#11): a
             // dupe is shown but greyed (already worked, not "not spotted"),
             // a needed multiplier stands out.
