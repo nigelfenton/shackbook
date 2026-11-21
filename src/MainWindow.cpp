@@ -15,6 +15,7 @@
 #include "DxClusterClient.h"
 #include "PotaClient.h"
 #include "WsprClient.h"
+#include "WsprSettings.h"
 #include "N1mmSpotClient.h"
 #include "ContestLayout.h"
 #include "CallsignLookup.h"
@@ -2605,27 +2606,23 @@ void MainWindow::onWsprAgentStateChanged(const QString& state,
 void MainWindow::applyWsprConfigFromSettings()
 {
     if (!m_model || !m_wspr) return;
-    const bool enable = m_model->settingValue("WSPR_ENABLE", "0") == "1";
-    if (!enable) {
+    const WsprConfig cfg = loadWsprConfig(
+        [this](const QString& k, const QString& d) { return m_model->settingValue(k, d); });
+    if (!cfg.enabled) {
         m_wspr->stop();
         return;
     }
-    const QString host = m_model->settingValue("WSPR_HOST", "").trimmed();
-    if (host.isEmpty()) {
+    if (!cfg.runnable()) {
         m_wspr->stop();
         if (m_dxcLog)
             m_dxcLog->appendPlainText("[apply] WSPR enabled but no agent host set");
         return;
     }
-    int port = m_model->settingValue("WSPR_PORT", "48995").toInt();
-    if (port <= 0 || port > 65535) port = 48995;
-    int sec = m_model->settingValue("WSPR_POLL_SEC", "60").toInt();
-    if (sec < 10) sec = 10;
-    m_wspr->setAgent(host, port);
-    m_wspr->start(sec);
+    m_wspr->setAgent(cfg.host, cfg.port);
+    m_wspr->start(cfg.pollSec);
     if (m_dxcLog)
-        m_dxcLog->appendPlainText(
-            QString("[apply] WSPR polling %1:%2 (every %3 s)").arg(host).arg(port).arg(sec));
+        m_dxcLog->appendPlainText(QString("[apply] WSPR polling %1:%2 (every %3 s)")
+                                      .arg(cfg.host).arg(cfg.port).arg(cfg.pollSec));
 }
 
 // ── Callsign lookup chain ────────────────────────────────────────────────

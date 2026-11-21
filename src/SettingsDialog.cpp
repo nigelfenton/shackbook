@@ -11,6 +11,7 @@
 #include "TciDiscovery.h"
 #include "ShackStatus.h"   // default MQTT topic prefix
 #include "CwKeyerSettings.h"
+#include "WsprSettings.h"
 
 #include <QComboBox>
 #include <QEventLoop>
@@ -294,6 +295,37 @@ void SettingsDialog::buildUI()
         "N1MM+'s broadcast list.");
     dxcL->addRow(m_n1mmEnable);
     dxcL->addRow("N1MM UDP port", m_n1mmPort);
+
+    // ── WSPR spots from an AetherWSPR receiver on the radio (#42) ──
+    auto* wsprSep = new QLabel("─── WSPR (AetherWSPR on the radio) ───");
+    wsprSep->setStyleSheet("QLabel { color: #6b8099; font-size: 9px; "
+                           "font-weight: bold; letter-spacing: 0.08em; }");
+    dxcL->addRow(wsprSep);
+    m_wsprEnable = new QCheckBox("Show WSPR spots from an AetherWSPR receiver");
+    m_wsprEnable->setToolTip(
+        "AetherWSPR decodes WSPR on the radio itself (a FLEX-6000 or 8000 running "
+        "the AetherWSPR waveform). ShackBook polls it and shows the stations it "
+        "hears in the Spot Index.\n\n"
+        "Spot panel only: WSPR receptions are not QSOs, so they never reach the "
+        "log or the awards. Receive-only.");
+    m_wsprHost = new QLineEdit;
+    m_wsprHost->setPlaceholderText("the radio's address, e.g. 192.168.0.47");
+    m_wsprHost->setToolTip(
+        "Where the agent runs: the radio's own IP address or hostname, "
+        "not the PC running AetherSDR.");
+    m_wsprPort = new QSpinBox;
+    m_wsprPort->setRange(1, 65535);
+    m_wsprPort->setToolTip("The agent's HTTP port. AetherWSPR uses 48995.");
+    m_wsprPollSec = new QSpinBox;
+    m_wsprPollSec->setRange(WsprConfig::kMinPollSec, WsprConfig::kMaxPollSec);
+    m_wsprPollSec->setSuffix(" s");
+    m_wsprPollSec->setToolTip(
+        "How often to ask the agent for new spots. WSPR decodes in two-minute "
+        "cycles, so once a minute is plenty.");
+    dxcL->addRow(m_wsprEnable);
+    dxcL->addRow("WSPR agent host", m_wsprHost);
+    dxcL->addRow("WSPR agent port", m_wsprPort);
+    dxcL->addRow("WSPR poll interval", m_wsprPollSec);
 
     auto refreshDxcEditable = [this]() {
         const bool manual = !m_dxcAutoDetect->isChecked();
@@ -601,6 +633,14 @@ void SettingsDialog::populate()
     m_potaPollSec->setValue(m_model->settingValue("POTA_POLL_SEC", "30").toInt());
     m_n1mmEnable->setChecked(m_model->settingValue("N1MM_SPOTS_ENABLE", "0") == "1");
     m_n1mmPort->setValue(m_model->settingValue("N1MM_SPOTS_PORT", "12060").toInt());
+    {
+        const WsprConfig wspr = loadWsprConfig(
+            [this](const QString& k, const QString& d) { return m_model->settingValue(k, d); });
+        m_wsprEnable->setChecked(wspr.enabled);
+        m_wsprHost->setText(wspr.host);
+        m_wsprPort->setValue(wspr.port);
+        m_wsprPollSec->setValue(wspr.pollSec);
+    }
 
     const bool manual = !m_dxcAutoDetect->isChecked();
     m_dxcHost->setEnabled(manual);
@@ -996,6 +1036,16 @@ void SettingsDialog::onAccept()
     m_model->setSetting("POTA_POLL_SEC", QString::number(m_potaPollSec->value()));
     m_model->setSetting("N1MM_SPOTS_ENABLE", m_n1mmEnable->isChecked() ? "1" : "0");
     m_model->setSetting("N1MM_SPOTS_PORT",   QString::number(m_n1mmPort->value()));
+    {
+        WsprConfig wspr;
+        wspr.enabled = m_wsprEnable->isChecked();
+        wspr.host    = m_wsprHost->text();
+        wspr.port    = m_wsprPort->value();
+        wspr.pollSec = m_wsprPollSec->value();
+        saveWsprConfig(wspr,
+            [this](const QString& k, const QString& d) { return m_model->settingValue(k, d); },
+            [this](const QString& k, const QString& v) { m_model->setSetting(k, v); });
+    }
 
     m_model->setSetting("LOOKUP_WORKEDBEFORE", m_lkWorkedBefore->isChecked() ? "1" : "0");
     m_model->setSetting("LOOKUP_CTY",          m_lkCty->isChecked() ? "1" : "0");

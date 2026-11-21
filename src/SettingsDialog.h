@@ -101,6 +101,11 @@ private:
     QSpinBox*   m_potaPollSec{};
     QCheckBox*  m_n1mmEnable{};
     QSpinBox*   m_n1mmPort{};
+    // WSPR spots from an AetherWSPR receiver on the radio (#42)
+    QCheckBox*  m_wsprEnable{};
+    QLineEdit*  m_wsprHost{};
+    QSpinBox*   m_wsprPort{};
+    QSpinBox*   m_wsprPollSec{};
 
     // Callsign lookup
     QCheckBox*  m_lkWorkedBefore{};
