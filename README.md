@@ -98,6 +98,12 @@ Three-tier autofill of an empty QSO's name / QTH / grid / state / country:
   greyed, needed multipliers bold. Spots the logger removes are removed here too.
   Receive-only. If another program (often SmartSDR CAT) already holds the port,
   ShackBook says so — pick another port and add it to N1MM's broadcast list.
+- **What each spot would add to your log** — the Spot Index's Need column marks a spot
+  ATNO, NEW BAND, NEW MODE or NEW SLOT (bold), or `worked`, matched through `cty.dat`.
+  A call or frequency it can't place is left blank rather than guessed.
+- **WSPR spots from an AetherWSPR receiver on the radio** — spot panel only; WSPR
+  receptions never reach the logbook or the awards.
+  Switch it on in Settings → DX Cluster, with the radio's address.
 - **Double-click a spot to tune** the radio to it (Tools → Show Spot Index; off by
   default, Settings → TCI). It moves the frequency and, optionally, the mode — never
   transmits.
