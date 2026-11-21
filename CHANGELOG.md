@@ -10,9 +10,39 @@ macOS DMG and attaches them to the GitHub release.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-21
+
+### Added
+- **What working each spot would add to the log** (Spot Index, new **Need** column). Each spot
+  is marked **ATNO**, **NEW BAND**, **NEW MODE**, **NEW SLOT** or `worked`, with the wanted ones
+  in bold. A tooltip names the bands and modes the log already holds for that country.
+  - Spots and log are matched through `cty.dat` from both sides, not through the stored country
+    name, which is ambiguous (DXCC 291 appears as both "United States" and "Alaska" in a real log).
+  - A call `cty.dat` cannot place, or a frequency on no amateur band, is left blank rather than
+    guessed. A spot with no mode can be ATNO or NEW BAND but never NEW MODE.
+  - Checked against a real 16,538-QSO log: 99.92% of its callsigns resolve.
+  - (#43, #45)
+- **WSPR spots from an AetherWSPR receiver on the radio**, a fourth spot source beside the DX
+  cluster, POTA and N1MM+/DXLog.
+  - ShackBook polls the agent's status page; the radio does the decoding, and no PC is involved.
+  - WSPR spots are spot-panel only and never reach the logbook. They are beacon receptions, not
+    QSOs, so they don't count toward DXCC, WAS or grids.
+  - The first poll after connecting does not flood the panel with the agent's history.
+  - Switch it on in **Settings → DX Cluster → WSPR (AetherWSPR on the radio)**: tick the box
+    and enter the radio's address (port 48995, polled once a minute by default). (#42, #50)
+
 ### Changed
 - **New app icon**: the G0JKN "signal ring" ShackBook mark, in every size from 16 to 256 px
   (the old icon was a single 674×659 image). Used for the program and the Windows installer.
+  (#46)
+- **macOS builds come from macos-15**; GitHub retired the macos-14 runners. The DMGs still
+  support macOS 12 or later. (#47)
+
+### Fixed
+- **Moving off a spot no longer keeps the previous station's call and comment.** QSY to a
+  frequency with no spot and the call and comment stayed in the entry fields, so a park
+  reference or cluster note could be saved against an unrelated QSO. A small QSY around the same
+  station still keeps them. (#41)
 
 ## [0.9.0] - 2026-10-05
 
